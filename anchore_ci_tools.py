@@ -23,14 +23,14 @@ ALL_VULN_TYPES = ['all', 'non-os', 'os']
 
 
 def add_image(image_name):
-    print ('Adding {} to Anchore engine for scanning.'.format(image_name))
+    print ("Adding {} to Anchore engine for scanning.".format(image_name))
     sys.stdout.flush()
     cmd = 'anchore-cli --json image add {}'.format(image_name).split()
 
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
     except Exception as error:
-        raise Exception ('Failed to add image to anchore engine. Error: {}'.format(error.output))
+        raise Exception ("Failed to add image to anchore engine. Error: {}".format(error.output))
 
     img_details = json.loads(output)
     img_digest = img_details[0]['imageDigest']
@@ -47,14 +47,14 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
 
     for type in report_type:
         if type not in ALL_REPORT_COMMANDS.keys():
-            raise Exception ('{} is not a valid report type.'.format(type))
+            raise Exception ("{} is not a valid report type.".format(type))
 
     for type in content_type:
         if type not in ALL_CONTENT_TYPES:
-            raise Exception ('{} is not a valid content report type.'.format(type))
+            raise Exception ("{} is not a valid content report type.".format(type))
 
     if vuln_type not in ALL_VULN_TYPES:
-        raise Exception ('{} is not a valid vulnerability report type.'.format(type))
+        raise Exception ("{} is not a valid vulnerability report type.".format(type))
 
     # Copy ALL_REPORT_COMMANDS dictionary but filter on report_type arg.
     active_report_cmds = {k:ALL_REPORT_COMMANDS[k] for k in report_type}
@@ -95,7 +95,7 @@ def get_config(config_path='/config/config.yaml', config_url='https://raw.github
         with open(config_path, 'w') as file:
             file.write(r.content)
     else:
-        raise Exception ('Failed to download config file {} - response httpcode={} data={}'.format(config_url, r.status_code, r.text))
+        raise Exception ("Failed to download config file {} - response httpcode={} data={}".format(config_url, r.status_code, r.text))
 
     return True
 
@@ -107,9 +107,10 @@ def get_image_info(img_digest, engine_url='http://localhost:8228/v1/images'):
     if r.status_code == 200:
         img_info = json.loads(r.text)[0]
         return img_info
-
     else:
         raise Exception ("Bad response from Anchore Engine - httpcode={} data={}".format(r.status_code, r.text))
+
+    return True
 
 
 def is_engine_running():
@@ -122,85 +123,98 @@ def is_engine_running():
         return False
 
 
+def is_image_analyzed(image_digest):
+    image_info = get_image_info(image_digest)
+    img_status = image_info['analysis_status']
+    if img_status == 'analyzed':
+        return True, img_status
+    else:
+        return False, img_status
+
+
+def print_status_message(last_status, status):
+    if status not in last_status:
+        print '\n\tStatus: {}'.format(status),
+        sys.stdout.flush()
+    else:
+        print '\b.',
+        sys.stdout.flush()
+
+    return True
+
+
 def start_anchore_engine():
     if not is_engine_running():
         cmd = 'anchore-manager service start'.split()
-        print ('Starting Anchore engine.')
+        print ("Starting Anchore engine.")
         sys.stdout.flush()
         log_file = open('anchore-engine.log', 'w')
 
         try:
             subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
-
         except Exception as error:
-            raise Exception ('Unable to start Anchore engine. Exception: {}'.format(error))
+            raise Exception ("Unable to start Anchore engine. Exception: {}".format(error))
 
         return True
     else:
-        raise Exception ('Anchore engine is already running.')
+        raise Exception ("Anchore engine is already running.")
 
 
 def verify_anchore_engine_available(user='admin', pw='foobar', timeout=300, health_url="http://localhost:8228/health", test_url="http://localhost:8228/v1/system/feeds"):
-    done = False
-    start_ts = time.time()
-    while not done:
-        try:
-            r = requests.get(health_url, verify=False, timeout=10)
-            if r.status_code == 200:
-                done = True
-            else:
-                print ("Anchore engine not up yet...".format(r.status_code, r.text))
-                sys.stdout.flush()
-        except Exception as err:
-            print ("Anchore engine not up yet...".format(err))
-            sys.stdout.flush()
-        time.sleep(10)
-        if time.time() - start_ts >= timeout:
-            raise Exception("Timed out after {} seconds".format(timeout))
-
-    done=False
-    while not done:
-        try:
-            r = requests.get(test_url, auth=(user, pw), verify=False, timeout=10)
-            if r.status_code == 200:
-                done = True
-            else:
-                print ("Anchore engine not up yet...".format(r.status_code, r.text))
-                sys.stdout.flush()
-        except Exception as err:
-            print ("Anchore engine not up yet...".format(err))
-            sys.stdout.flush()
-        time.sleep(10)
-        if time.time() - start_ts >= timeout:
-            raise Exception("Timed out after {} seconds".format(timeout))
-
-    return(True)
-
-
-def wait_image_analyzed(image_digest, timeout=300):
-    print 'Waiting for analysis to complete...'
-    sys.stdout.flush()
-    last_img_status = str()
+    last_status = str()
     start_ts = time.time()
     while True:
         if time.time() - start_ts >= timeout:
-            raise Exception("Analysis timed out after {} seconds".format(timeout))
-        image_info = get_image_info(image_digest)
-        img_status = image_info['analysis_status']
-        # prints a new line and image status if status changed, otherwise print ...
-        if img_status not in last_img_status:
-            if not img_status == 'analyzed':
-                print 'Analysis status: {}'.format(img_status)
-                sys.stdout.flush()
-                last_img_status = img_status
-            else:
-                print ('\nAnalysis successful
-                sys.stdout.flush()
+            raise Exception("Timed out after {} seconds.".format(timeout))
+        try:
+            r = requests.get(health_url, verify=False, timeout=10)
+            if r.status_code == 200:
                 break
-        else:
-            print '\b.',
+            else:
+                status = "not ready"
+                print_status_message(last_status, status)
+        except Exception as err:
+            status = "not ready"
+            print_status_message(last_status, status)
+        last_status = status
+        time.sleep(10)
+
+
+    while True:
+        if time.time() - start_ts >= timeout:
+            raise Exception("Timed out after {} seconds.".format(timeout))
+        try:
+            r = requests.get(test_url, auth=(user, pw), verify=False, timeout=10)
+            if r.status_code == 200:
+                break
+            else:
+                status = "not ready"
+                print_status_message(last_status, status)
+        except Exception as err:
+            status = "not ready"
+            print_status_message(last_status, status)
+        time.sleep(10)
+
+    return True
+
+
+def wait_image_analyzed(image_digest, timeout=300):
+    print ('Waiting for analysis to complete.')
+    sys.stdout.flush()
+
+    last_img_status = str()
+    is_analyzed = False
+    start_ts = time.time()
+    while not is_analyzed:
+        if time.time() - start_ts >= timeout:
+            raise Exception('Analysis timed out after {} seconds.'.format(timeout))
+        is_analyzed, img_status = is_image_analyzed(image_digest)
+        if is_analyzed:
+            print ("\n\nAnalysis completed!\n")
             sys.stdout.flush()
-            last_img_status = img_status
+            break
+        print_status_message(last_img_status, img_status)
+        last_img_status = img_status
         time.sleep(10)
 
     return True
@@ -223,6 +237,7 @@ def write_log_from_output(command, file_name, ignore_exit_code=False):
 
     print ('Successfully generated {}.'.format(file_name))
     sys.stdout.flush()
+
     return True
 
 
@@ -232,14 +247,16 @@ def main(analyze_image=None, content_type=None, generate_report=None, image_name
         get_config()
         start_anchore_engine()
         verify_anchore_engine_available(timeout=timeout)
-        print ('Anchore engine is ready!')
+        print ('\n\nAnchore engine is ready!\n')
 
     elif image_name:
         if analyze_image:
             img_digest = add_image(image_name)
             wait_image_analyzed(img_digest, timeout)
         if generate_report:
+            print ("\n")
             generate_reports(image_name, content_type, report_type, vuln_type)
+            print ("\n")
 
     else:
         parser.print_help()
