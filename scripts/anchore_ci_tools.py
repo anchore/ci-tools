@@ -87,12 +87,13 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
 
 
 def get_config(config_path='/config/config.yaml', config_url='https://raw.githubusercontent.com/anchore/anchore-engine/master/scripts/docker-compose/config.yaml'):
-    if not os.path.exists(config_path):
-        os.makedirs(config_path)
+    conf_dir = os.path.dirname(config_path)
+    if not os.path.exists(conf_dir):
+        os.makedirs(conf_dir)
 
     r = requests.get(config_url, stream=True)
     if r.status_code == 200:
-        with open(config_path, 'w') as file:
+        with open(config_path, 'wb') as file:
             file.write(r.content)
     else:
         raise Exception ("Failed to download config file {} - response httpcode={} data={}".format(config_url, r.status_code, r.text))
@@ -244,6 +245,7 @@ def main(analyze_image=None, content_type=None, generate_report=None, image_name
         get_config()
         start_anchore_engine()
         wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout)
+
     elif image_name:
         if analyze_image:
             img_digest = add_image(image_name)
