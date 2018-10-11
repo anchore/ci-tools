@@ -8,7 +8,6 @@ import subprocess
 import sys
 import time
 
-
 global ALL_CONTENT_TYPES
 global ALL_REPORT_COMMANDS
 global ALL_VULN_TYPES
@@ -23,8 +22,8 @@ ALL_REPORT_COMMANDS = {
 ALL_VULN_TYPES = ['all', 'non-os', 'os']
 
 
-def add_image_analyze(image_name, timeout=300):
-    print ('Adding {} to Anchore engine for scanning...'.format(image_name))
+def add_image(image_name):
+    print ('Adding {} to Anchore engine for scanning.'.format(image_name))
     sys.stdout.flush()
     cmd = 'anchore-cli --json image add {}'.format(image_name).split()
 
@@ -35,16 +34,8 @@ def add_image_analyze(image_name, timeout=300):
 
     img_details = json.loads(output)
     img_digest = img_details[0]['imageDigest']
-    print ('Waiting for analysis to complete...')
-    sys.stdout.flush()
 
-    start_ts = time.time()
-    while not is_image_analyzed(img_digest):
-        if time.time() - start_ts >= timeout:
-            raise Exception("Analysis timed out after {} seconds".format(timeout))
-        time.sleep(10)
-
-    return True
+    return img_digest
 
 
 def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln_type='all'):
@@ -54,12 +45,10 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
     if 'all' in report_type:
         report_type = ALL_REPORT_COMMANDS.keys()
 
-    # Check that report types are valid
     for type in report_type:
         if type not in ALL_REPORT_COMMANDS.keys():
             raise Exception ('{} is not a valid report type.'.format(type))
 
-    # Check that content types are valid
     for type in content_type:
         if type not in ALL_CONTENT_TYPES:
             raise Exception ('{} is not a valid content report type.'.format(type))
@@ -70,6 +59,8 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
     # Copy ALL_REPORT_COMMANDS dictionary but filter on report_type arg.
     active_report_cmds = {k:ALL_REPORT_COMMANDS[k] for k in report_type}
 
+    # loop through active_report_cmds dict and run specified commands for all report_types
+    # generate log files from output of run commands
     for report in active_report_cmds.keys():
         if report == 'content':
             for type in content_type:
@@ -95,23 +86,22 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
     return True
 
 
-def get_config(config_file='config.yaml', file_url='https://raw.githubusercontent.com/anchore/anchore-engine/master/scripts/docker-compose/config.yaml'):
-    file_path = '/config/' + config_file
-    if not os.path.exists('/config'):
-        os.makedirs('/config')
+def get_config(config_path='/config/config.yaml', config_url='https://raw.githubusercontent.com/anchore/anchore-engine/master/scripts/docker-compose/config.yaml'):
+    if not os.path.exists(config_path):
+        os.makedirs(config_path)
 
-    r = requests.get(file_url, stream=True)
+    r = requests.get(config_url, stream=True)
     if r.status_code == 200:
-        with open(file_path, 'w') as file:
+        with open(config_path, 'w') as file:
             file.write(r.content)
     else:
-        raise Exception ('Failed to download config file {} - response httpcode={} data={}'.format(file_url, r.status_code, r.text))
+        raise Exception ('Failed to download config file {} - response httpcode={} data={}'.format(config_url, r.status_code, r.text))
 
     return True
 
 
-def get_image_info(img_digest, engine_url='http://localhost:8228/v1'):
-    url = '{}/images/{}'.format(engine_url, img_digest)
+def get_image_info(img_digest, engine_url='http://localhost:8228/v1/images'):
+    url = '{}/{}'.format(engine_url, img_digest)
     r = requests.get(url, auth=('admin', 'foobar'), verify=False, timeout=20)
 
     if r.status_code == 200:
@@ -127,18 +117,6 @@ def is_engine_running():
     output = subprocess.check_output(cmd)
 
     if 'anchore-manager' in output or 'anchore-engine' in output:
-        return True
-    else:
-        return False
-
-
-def is_image_analyzed(image_digest):
-    image_info = get_image_info(image_digest)
-    img_status = image_info['analysis_status']
-    print ('Analysis status: {}'.format(img_status))
-    sys.stdout.flush()
-
-    if img_status == 'analyzed':
         return True
     else:
         return False
@@ -171,12 +149,12 @@ def verify_anchore_engine_available(user='admin', pw='foobar', timeout=300, heal
             if r.status_code == 200:
                 done = True
             else:
-                print ("Anchore engine not up yet - response httpcode={} data={}".format(r.status_code, r.text))
+                print ("Anchore engine not up yet...".format(r.status_code, r.text))
                 sys.stdout.flush()
         except Exception as err:
-            print ("Anchore engine not up yet - exception: {}".format(err))
+            print ("Anchore engine not up yet...".format(err))
             sys.stdout.flush()
-        time.sleep(5)
+        time.sleep(10)
         if time.time() - start_ts >= timeout:
             raise Exception("Timed out after {} seconds".format(timeout))
 
@@ -187,16 +165,45 @@ def verify_anchore_engine_available(user='admin', pw='foobar', timeout=300, heal
             if r.status_code == 200:
                 done = True
             else:
-                print ("Anchore engine not up yet - response httpcode={} data={}".format(r.status_code, r.text))
+                print ("Anchore engine not up yet...".format(r.status_code, r.text))
                 sys.stdout.flush()
         except Exception as err:
-            print ("Anchore engine not up yet - exception: {}".format(err))
+            print ("Anchore engine not up yet...".format(err))
             sys.stdout.flush()
-        time.sleep(5)
+        time.sleep(10)
         if time.time() - start_ts >= timeout:
             raise Exception("Timed out after {} seconds".format(timeout))
 
     return(True)
+
+
+def wait_image_analyzed(image_digest, timeout=300):
+    print 'Waiting for analysis to complete...'
+    sys.stdout.flush()
+    last_img_status = str()
+    start_ts = time.time()
+    while True:
+        if time.time() - start_ts >= timeout:
+            raise Exception("Analysis timed out after {} seconds".format(timeout))
+        image_info = get_image_info(image_digest)
+        img_status = image_info['analysis_status']
+        # prints a new line and image status if status changed, otherwise print ...
+        if img_status not in last_img_status:
+            if not img_status == 'analyzed':
+                print 'Analysis status: {}'.format(img_status)
+                sys.stdout.flush()
+                last_img_status = img_status
+            else:
+                print ('\nAnalysis successful
+                sys.stdout.flush()
+                break
+        else:
+            print '\b.',
+            sys.stdout.flush()
+            last_img_status = img_status
+        time.sleep(10)
+
+    return True
 
 
 def write_log_from_output(command, file_name, ignore_exit_code=False):
@@ -229,7 +236,8 @@ def main(analyze_image=None, content_type=None, generate_report=None, image_name
 
     elif image_name:
         if analyze_image:
-            add_image_analyze(image_name, timeout)
+            img_digest = add_image(image_name)
+            wait_image_analyzed(img_digest, timeout)
         if generate_report:
             generate_reports(image_name, content_type, report_type, vuln_type)
 
@@ -286,6 +294,19 @@ if __name__ == '__main__':
         parser.print_help()
         print ("\n\nERROR - Must specify an action to perform on image. Plase include --report or --analyze")
         sys.exit(1)
+
+    anchore_env_vars = {
+        "ANCHORE_HOST_ID" : "localhost",
+        "ANCHORE_ENDPOINT_HOSTNAME" : "localhost",
+        "ANCHORE_CLI_USER" : "admin",
+        "ANCHORE_CLI_PASS" : "foobar",
+        "ANCHORE_CLI_SSL_VERIFY" : "n"
+    }
+
+    # set default anchore cli environment variables if they aren't already set
+    for var in anchore_env_vars.keys():
+        if var not in os.environ:
+            os.environ[var] = anchore_env_vars[var]
 
     try:
         main(analyze_image, content_type, generate_report, image_name, report_type, setup_engine, timeout, vuln_type)
