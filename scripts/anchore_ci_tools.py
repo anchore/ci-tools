@@ -146,10 +146,10 @@ def is_service_available(url, user='admin', pw='foobar', timeout=300):
             status = "ready"
             return True, status
         else:
-            status = "not ready"
+            status = "not_ready"
             return False, status
     except Exception as err:
-        status = "not ready"
+        status = "not_ready"
         return False, status
 
 
@@ -167,14 +167,14 @@ def print_status_message(last_status, status):
 def start_anchore_engine():
     if not is_engine_running():
         cmd = 'anchore-manager service start'.split()
-        print ("Starting Anchore engine.")
+        print ("Starting anchore engine...")
         sys.stdout.flush()
         log_file = open('anchore-engine.log', 'w')
 
         try:
             subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
         except Exception as error:
-            raise Exception ("Unable to start Anchore engine. Exception: {}".format(error))
+            raise Exception ("Unable to start anchore engine. Exception: {}".format(error))
 
         return True
     else:
@@ -193,14 +193,14 @@ def wait_engine_available(health_check_urls=[], timeout=300):
             last_status = status
             time.sleep(10)
 
-    print ("\n\nAnchore Engine is available!\n")
+    print ("\n\nAnchore engine is available!\n")
     sys.stdout.flush()
 
     return True
 
 
 def wait_image_analyzed(image_digest, timeout=300):
-    print ('Waiting for analysis to complete.')
+    print ('Waiting for analysis to complete...')
     sys.stdout.flush()
     last_img_status = str()
     is_analyzed = False
@@ -269,7 +269,7 @@ if __name__ == '__main__':
     report_type_choices.append('all')
     vuln_type_choices = ALL_VULN_TYPES
 
-    parser = argparse.ArgumentParser(description='A tool that automates various Anchore Engine functions for CI pipelines. Intended to be run directly on the anchore/anchore-engine container.')
+    parser = argparse.ArgumentParser(description='A tool that automates various anchore engine functions for CI pipelines. Intended to be run directly on the anchore/anchore-engine container.')
     parser.add_argument('-a', '--analyze', action='store_true', help='Specify if you want image to be analyzed by anchore engine.')
     parser.add_argument('-r', '--report', action='store_true', help='Generate reports on analyzed image.')
     parser.add_argument('-s', '--setup', action='store_true', help='Sets up & starts anchore engine on running container.')
