@@ -100,9 +100,9 @@ def get_config(config_path='/config/config.yaml', config_url='https://raw.github
     return True
 
 
-def get_image_info(img_digest, engine_url='http://localhost:8228/v1/images'):
+def get_image_info(img_digest, user='admin', pw='foobar', engine_url='http://localhost:8228/v1/images'):
     url = '{}/{}'.format(engine_url, img_digest)
-    r = requests.get(url, auth=('admin', 'foobar'), verify=False, timeout=20)
+    r = requests.get(url, auth=(user, pw), verify=False, timeout=20)
 
     if r.status_code == 200:
         img_info = json.loads(r.text)[0]
@@ -123,13 +123,33 @@ def is_engine_running():
         return False
 
 
-def is_image_analyzed(image_digest):
+def is_image_analyzed(image_digest, timeout=300):
+    start_ts = time.time()
+    if time.time() - start_ts >= timeout:
+        raise Exception("Timed out after {} seconds.".format(timeout))
     image_info = get_image_info(image_digest)
     img_status = image_info['analysis_status']
     if img_status == 'analyzed':
         return True, img_status
     else:
         return False, img_status
+
+
+def is_service_available(url, user='admin', pw='foobar', timeout=300):
+    start_ts = time.time()
+    if time.time() - start_ts >= timeout:
+        raise Exception("Timed out after {} seconds.".format(timeout))
+    try:
+        r = requests.get(url, auth=(user, pw), verify=False, timeout=10)
+        if r.status_code == 200:
+            status = "ready"
+            return True, status
+        else:
+            status = "not ready"
+            return False, status
+    except Exception as err:
+        status = "not ready"
+        return False, status
 
 
 def print_status_message(last_status, status):
@@ -160,40 +180,20 @@ def start_anchore_engine():
         raise Exception ("Anchore engine is already running.")
 
 
-def verify_anchore_engine_available(user='admin', pw='foobar', timeout=300, health_url="http://localhost:8228/health", test_url="http://localhost:8228/v1/system/feeds"):
+def wait_engine_available(health_check_urls=[], timeout=300):
     last_status = str()
-    start_ts = time.time()
-    while True:
-        if time.time() - start_ts >= timeout:
-            raise Exception("Timed out after {} seconds.".format(timeout))
-        try:
-            r = requests.get(health_url, verify=False, timeout=10)
-            if r.status_code == 200:
+    for url in health_check_urls:
+        is_available = False
+        while not is_available:
+            is_available, status = is_service_available(url=url, timeout=timeout)
+            if is_available:
                 break
-            else:
-                status = "not ready"
-                print_status_message(last_status, status)
-        except Exception as err:
-            status = "not ready"
             print_status_message(last_status, status)
-        last_status = status
-        time.sleep(10)
+            last_status = status
+            time.sleep(10)
 
-
-    while True:
-        if time.time() - start_ts >= timeout:
-            raise Exception("Timed out after {} seconds.".format(timeout))
-        try:
-            r = requests.get(test_url, auth=(user, pw), verify=False, timeout=10)
-            if r.status_code == 200:
-                break
-            else:
-                status = "not ready"
-                print_status_message(last_status, status)
-        except Exception as err:
-            status = "not ready"
-            print_status_message(last_status, status)
-        time.sleep(10)
+    print ("\n\nAnchore Engine is available!\n")
+    sys.stdout.flush()
 
     return True
 
@@ -201,21 +201,18 @@ def verify_anchore_engine_available(user='admin', pw='foobar', timeout=300, heal
 def wait_image_analyzed(image_digest, timeout=300):
     print ('Waiting for analysis to complete.')
     sys.stdout.flush()
-
     last_img_status = str()
     is_analyzed = False
-    start_ts = time.time()
     while not is_analyzed:
-        if time.time() - start_ts >= timeout:
-            raise Exception('Analysis timed out after {} seconds.'.format(timeout))
-        is_analyzed, img_status = is_image_analyzed(image_digest)
+        is_analyzed, img_status = is_image_analyzed(image_digest, timeout=timeout)
         if is_analyzed:
-            print ("\n\nAnalysis completed!\n")
-            sys.stdout.flush()
             break
         print_status_message(last_img_status, img_status)
         last_img_status = img_status
         time.sleep(10)
+
+    print ("\n\nAnalysis completed!\n")
+    sys.stdout.flush()
 
     return True
 
@@ -246,9 +243,7 @@ def main(analyze_image=None, content_type=None, generate_report=None, image_name
     if setup_engine:
         get_config()
         start_anchore_engine()
-        verify_anchore_engine_available(timeout=timeout)
-        print ('\n\nAnchore engine is ready!\n')
-
+        wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout)
     elif image_name:
         if analyze_image:
             img_digest = add_image(image_name)
