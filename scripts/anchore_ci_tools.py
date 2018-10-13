@@ -23,7 +23,7 @@ ALL_VULN_TYPES = ['all', 'non-os', 'os']
 
 
 def add_image(image_name):
-    print ("Adding {} to Anchore engine for scanning.".format(image_name))
+    print ("Adding {} to anchore engine for scanning.".format(image_name))
     sys.stdout.flush()
     cmd = 'anchore-cli --json image add {}'.format(image_name).split()
 
@@ -132,6 +132,9 @@ def is_image_analyzed(image_digest, timeout=300):
     img_status = image_info['analysis_status']
     if img_status == 'analyzed':
         return True, img_status
+    if img_status == 'analysis_failed':
+        parsed_image_info = json.dumps(image_info, indent=2)
+        raise Exception("Image analysis failed. Image details:\n{}".format(parsed_image_info))
     else:
         return False, img_status
 
@@ -154,7 +157,7 @@ def is_service_available(url, user='admin', pw='foobar', timeout=300):
 
 
 def print_status_message(last_status, status):
-    if status not in last_status:
+    if not status == last_status:
         print '\n\tStatus: {}'.format(status),
         sys.stdout.flush()
     else:
@@ -162,6 +165,29 @@ def print_status_message(last_status, status):
         sys.stdout.flush()
 
     return True
+
+
+def setup_parser():
+    content_type_choices = [type for type in ALL_CONTENT_TYPES]
+    content_type_choices.append('all')
+    report_type_choices = [type for type in ALL_REPORT_COMMANDS.keys()]
+    report_type_choices.append('all')
+    vuln_type_choices = ALL_VULN_TYPES
+
+    parser = argparse.ArgumentParser(description='A tool that automates various anchore engine functions for CI pipelines. Intended to be run directly on the anchore/anchore-engine container.')
+    parser.add_argument('-a', '--analyze', action='store_true', help='Specify if you want image to be analyzed by anchore engine.')
+    parser.add_argument('-r', '--report', action='store_true', help='Generate reports on analyzed image.')
+    parser.add_argument('-s', '--setup', action='store_true', help='Sets up & starts anchore engine on running container.')
+    parser.add_argument('-w','--wait', action='store_true', help='Wait for anchore engine to start up.')
+    parser.add_argument('--image', help='Specify the image name. REQUIRED for analyze and report options.')
+    parser.add_argument('--timeout', default=300, type=int, help='Set custom timeout (in seconds) for image analysis and/or engine setup.')
+    parser.add_argument('--content', nargs='+', choices=content_type_choices, default='all', help='Specify what content reports to generate. Can pass multiple options. Ignored if --type content not specified. Available options are: [{}]'.format(', '.join(content_type_choices)), metavar='')
+    parser.add_argument('--type', nargs='+', choices=report_type_choices, default='all', help='Specify what report types to generate. Can pass multiple options. Available options are: [{}]'.format(', '.join(report_type_choices)), metavar='')
+    parser.add_argument('--vuln', choices=vuln_type_choices, default='all', help='Specify what vulnerability reports to generate. Available options are: [{}] '.format(', '.join(vuln_type_choices)), metavar='')
+
+    args = parser.parse_args()
+
+    return args
 
 
 def start_anchore_engine():
@@ -206,9 +232,9 @@ def wait_image_analyzed(image_digest, timeout=300):
     is_analyzed = False
     while not is_analyzed:
         is_analyzed, img_status = is_image_analyzed(image_digest, timeout=timeout)
+        print_status_message(last_img_status, img_status)
         if is_analyzed:
             break
-        print_status_message(last_img_status, img_status)
         last_img_status = img_status
         time.sleep(10)
 
@@ -240,46 +266,8 @@ def write_log_from_output(command, file_name, ignore_exit_code=False):
 
 
 ### MAIN PROGRAM STARTS HERE ###
-def main(analyze_image=None, content_type=None, generate_report=None, image_name=None, report_type=None, setup_engine=None, timeout=None, vuln_type=None):
-    if setup_engine:
-        get_config()
-        start_anchore_engine()
-        wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout)
-
-    elif image_name:
-        if analyze_image:
-            img_digest = add_image(image_name)
-            wait_image_analyzed(img_digest, timeout)
-        if generate_report:
-            print ("\n")
-            generate_reports(image_name, content_type, report_type, vuln_type)
-            print ("\n")
-
-    else:
-        parser.print_help()
-        print ('\n\nError processing command arguments for {}.'.format(sys.argv[0]))
-        sys.exit(1)
-
-
-if __name__ == '__main__':
-
-    content_type_choices = [type for type in ALL_CONTENT_TYPES]
-    content_type_choices.append('all')
-    report_type_choices = [type for type in ALL_REPORT_COMMANDS.keys()]
-    report_type_choices.append('all')
-    vuln_type_choices = ALL_VULN_TYPES
-
-    parser = argparse.ArgumentParser(description='A tool that automates various anchore engine functions for CI pipelines. Intended to be run directly on the anchore/anchore-engine container.')
-    parser.add_argument('-a', '--analyze', action='store_true', help='Specify if you want image to be analyzed by anchore engine.')
-    parser.add_argument('-r', '--report', action='store_true', help='Generate reports on analyzed image.')
-    parser.add_argument('-s', '--setup', action='store_true', help='Sets up & starts anchore engine on running container.')
-    parser.add_argument('--image', help='Specify the image name. REQUIRED for analyze and report options.')
-    parser.add_argument('--timeout', default=300, type=int, help='Set custom timeout (in seconds) for image analysis and/or engine setup.')
-    parser.add_argument('--content', nargs='+', choices=content_type_choices, default='all', help='Specify what content reports to generate. Can pass multiple options. Ignored if --type content not specified. Available options are: [{}]'.format(', '.join(content_type_choices)), metavar='')
-    parser.add_argument('--type', nargs='+', choices=report_type_choices, default='all', help='Specify what report types to generate. Can pass multiple options. Available options are: [{}]'.format(', '.join(report_type_choices)), metavar='')
-    parser.add_argument('--vuln', choices=vuln_type_choices, default='all', help='Specify what vulnerability reports to generate. Available options are: [{}] '.format(', '.join(vuln_type_choices)), metavar='')
-
-    args = parser.parse_args()
+def main(args):
+    # setup vars for arguments passed to script
     analyze_image = args.analyze
     content_type = args.content
     generate_report = args.report
@@ -288,26 +276,27 @@ if __name__ == '__main__':
     setup_engine = args.setup
     timeout = args.timeout
     vuln_type = args.vuln
+    wait_engine = args.wait
 
     if len(sys.argv) <= 1 :
         parser.print_help()
-        print ("\n\nERROR - Must specify at least one option.")
-        sys.exit(1)
+        raise Exception ("\n\nERROR - Must specify at least one option.")
+
+    if wait_engine and (setup_engine or image_name or generate_report or analyze_image):
+        parser.print_help()
+        raise Exception ("\n\nERROR - The --wait option is standalone. Cannot be used with any other options.")
 
     if setup_engine and (image_name or generate_report or analyze_image):
         parser.print_help()
-        print ("\n\nERROR - Cannot analyze image or generate reports until engine is setup.")
-        sys.exit(1)
+        raise Exception ("\n\nERROR - Cannot analyze image or generate reports until engine is setup.")
 
     if (generate_report or analyze_image) and not image_name:
         parser.print_help()
-        print ("\n\nERROR - Cannot analyze image or generate a report without specifying an image name.")
-        sys.exit(1)
+        raise Exception ("\n\nERROR - Cannot analyze image or generate a report without specifying an image name.")
 
     if image_name and not (generate_report or analyze_image):
         parser.print_help()
-        print ("\n\nERROR - Must specify an action to perform on image. Plase include --report or --analyze")
-        sys.exit(1)
+        raise Exception ("\n\nERROR - Must specify an action to perform on image. Plase include --report or --analyze")
 
     anchore_env_vars = {
         "ANCHORE_HOST_ID" : "localhost",
@@ -322,8 +311,31 @@ if __name__ == '__main__':
         if var not in os.environ:
             os.environ[var] = anchore_env_vars[var]
 
+    if wait_engine:
+        wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout)
+
+    elif setup_engine:
+        get_config()
+        start_anchore_engine()
+        wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout)
+
+    elif image_name:
+        if analyze_image:
+            img_digest = add_image(image_name)
+            wait_image_analyzed(img_digest, timeout)
+        if generate_report:
+            generate_reports(image_name, content_type, report_type, vuln_type)
+            print ("\n")
+
+    else:
+        parser.print_help()
+        raise Exception ('\n\nError processing command arguments for {}.'.format(sys.argv[0]))
+
+
+if __name__ == '__main__':
     try:
-        main(analyze_image, content_type, generate_report, image_name, report_type, setup_engine, timeout, vuln_type)
+        args = setup_parser()
+        main(args)
 
     except Exception as error:
         print ('\n\nERROR executing script - Exception: {}'.format(error))
