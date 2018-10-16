@@ -124,10 +124,7 @@ def is_engine_running():
         return False
 
 
-def is_image_analyzed(image_digest, timeout=300):
-    start_ts = time.time()
-    if time.time() - start_ts >= timeout:
-        raise Exception("Timed out after {} seconds.".format(timeout))
+def is_image_analyzed(image_digest):
     image_info = get_image_info(image_digest)
     img_status = image_info['analysis_status']
     if img_status == 'analyzed':
@@ -139,10 +136,7 @@ def is_image_analyzed(image_digest, timeout=300):
         return False, img_status
 
 
-def is_service_available(url, user='admin', pw='foobar', timeout=300):
-    start_ts = time.time()
-    if time.time() - start_ts >= timeout:
-        raise Exception("Timed out after {} seconds.".format(timeout))
+def is_service_available(url, user='admin', pw='foobar'):
     try:
         r = requests.get(url, auth=(user, pw), verify=False, timeout=10)
         if r.status_code == 200:
@@ -208,11 +202,14 @@ def start_anchore_engine():
 
 
 def wait_engine_available(health_check_urls=[], timeout=300):
+    start_ts = time.time()
     last_status = str()
     for url in health_check_urls:
         is_available = False
         while not is_available:
-            is_available, status = is_service_available(url=url, timeout=timeout)
+            if time.time() - start_ts >= timeout:
+                raise Exception("Timed out after {} seconds.".format(timeout))
+            is_available, status = is_service_available(url=url)
             if is_available:
                 break
             print_status_message(last_status, status)
@@ -230,8 +227,11 @@ def wait_image_analyzed(image_digest, timeout=300):
     sys.stdout.flush()
     last_img_status = str()
     is_analyzed = False
+    start_ts = time.time()
     while not is_analyzed:
-        is_analyzed, img_status = is_image_analyzed(image_digest, timeout=timeout)
+        if time.time() - start_ts >= timeout:
+            raise Exception("Timed out after {} seconds.".format(timeout))
+        is_analyzed, img_status = is_image_analyzed(image_digest)
         print_status_message(last_img_status, img_status)
         if is_analyzed:
             break
