@@ -38,7 +38,7 @@ def add_image(image_name):
     return img_digest
 
 
-def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln_type='all'):
+def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln_type='all', report_directory="anchore-reports"):
     if 'all' in content_type:
         content_type = ALL_CONTENT_TYPES
 
@@ -56,6 +56,10 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
     if vuln_type not in ALL_VULN_TYPES:
         raise Exception ("{} is not a valid vulnerability report type.".format(type))
 
+    report_dir = report_directory
+    if not os.path.exists(report_dir):
+        os.makedirs(report_dir)
+
     # Copy ALL_REPORT_COMMANDS dictionary but filter on report_type arg.
     active_report_cmds = {k:ALL_REPORT_COMMANDS[k] for k in report_type}
 
@@ -64,22 +68,22 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
     for report in active_report_cmds.keys():
         if report == 'content':
             for type in content_type:
-                file_name = 'image-{}-{}-report.json'.format(report, type)
+                file_name = '{}/image-{}-{}-report.json'.format(report_dir, report, type)
                 cmd = '{} {} {}'.format(ALL_REPORT_COMMANDS[report], image_name, type).split()
                 write_log_from_output(cmd, file_name)
 
         elif report == 'policy':
-            file_name = 'image-{}-report.json'.format(report)
+            file_name = '{}/image-{}-report.json'.format(report_dir, report)
             cmd = '{} {} --detail'.format(ALL_REPORT_COMMANDS[report], image_name).split()
             write_log_from_output(cmd, file_name, ignore_exit_code=True)
 
         elif report == 'vuln':
-            file_name = 'image-{}-report.json'.format(report)
+            file_name = '{}/image-{}-report.json'.format(report_dir, report)
             cmd = '{} {} {}'.format(ALL_REPORT_COMMANDS[report], image_name, vuln_type).split()
             write_log_from_output(cmd, file_name)
 
         else:
-            file_name = 'image-{}-report.json'.format(report)
+            file_name = '{}/image-{}-report.json'.format(report_dir, report)
             cmd = '{} {}'.format(ALL_REPORT_COMMANDS[report], image_name).split()
             write_log_from_output(cmd, file_name)
 
