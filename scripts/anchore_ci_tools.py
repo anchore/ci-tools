@@ -183,9 +183,7 @@ def setup_parser():
     parser.add_argument('--type', nargs='+', choices=report_type_choices, default='all', help='Specify what report types to generate. Can pass multiple options. Available options are: [{}]'.format(', '.join(report_type_choices)), metavar='')
     parser.add_argument('--vuln', choices=vuln_type_choices, default='all', help='Specify what vulnerability reports to generate. Available options are: [{}] '.format(', '.join(vuln_type_choices)), metavar='')
 
-    args = parser.parse_args()
-
-    return args
+    return parser
 
 
 def start_anchore_engine():
@@ -270,8 +268,11 @@ def write_log_from_output(command, file_name, ignore_exit_code=False):
 
 
 ### MAIN PROGRAM STARTS HERE ###
-def main(args):
+def main(arg_parser):
+    parser = arg_parser
+
     # setup vars for arguments passed to script
+    args = parser.parse_args()
     analyze_image = args.analyze
     content_type = args.content
     generate_report = args.report
@@ -338,8 +339,8 @@ def main(args):
 
 if __name__ == '__main__':
     try:
-        args = setup_parser()
-        main(args)
+        arg_parser = setup_parser()
+        main(arg_parser)
 
     except Exception as error:
         print ('\n\nERROR executing script - Exception: {}'.format(error))
