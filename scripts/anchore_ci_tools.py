@@ -122,7 +122,7 @@ def is_engine_running():
     cmd = 'ps aux'.split()
     output = subprocess.check_output(cmd)
 
-    if 'anchore-manager' in output or 'anchore-engine' in output:
+    if 'anchore-manager' in output or 'twistd' in output:
         return True
     else:
         return False
