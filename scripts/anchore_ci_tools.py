@@ -128,8 +128,8 @@ def is_engine_running():
         return False
 
 
-def is_image_analyzed(image_digest):
-    image_info = get_image_info(image_digest)
+def is_image_analyzed(image_digest, user='admin', pw='foobar'):
+    image_info = get_image_info(image_digest, user=user, pw=pw)
     img_status = image_info['analysis_status']
     if img_status == 'analyzed':
         return True, img_status
@@ -203,7 +203,7 @@ def start_anchore_engine():
         raise Exception ("Anchore engine is already running.")
 
 
-def wait_engine_available(health_check_urls=[], timeout=300):
+def wait_engine_available(health_check_urls=[], timeout=300, user='admin', pw='foobar'):
     start_ts = time.time()
     last_status = str()
     for url in health_check_urls:
@@ -211,7 +211,7 @@ def wait_engine_available(health_check_urls=[], timeout=300):
         while not is_available:
             if time.time() - start_ts >= timeout:
                 raise Exception("Timed out after {} seconds.".format(timeout))
-            is_available, status = is_service_available(url=url)
+            is_available, status = is_service_available(url=url, user=user, pw=pw)
             if is_available:
                 break
             print_status_message(last_status, status)
@@ -224,7 +224,7 @@ def wait_engine_available(health_check_urls=[], timeout=300):
     return True
 
 
-def wait_image_analyzed(image_digest, timeout=300):
+def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
     print ('Waiting for analysis to complete...')
     sys.stdout.flush()
     last_img_status = str()
@@ -233,7 +233,7 @@ def wait_image_analyzed(image_digest, timeout=300):
     while not is_analyzed:
         if time.time() - start_ts >= timeout:
             raise Exception("Timed out after {} seconds.".format(timeout))
-        is_analyzed, img_status = is_image_analyzed(image_digest)
+        is_analyzed, img_status = is_image_analyzed(image_digest, user=user, pw=pw)
         print_status_message(last_img_status, img_status)
         if is_analyzed:
             break
@@ -316,18 +316,21 @@ def main(arg_parser):
         if var not in os.environ:
             os.environ[var] = anchore_env_vars[var]
 
+    anchore_user = os.environ["ANCHORE_CLI_USER"]
+    anchore_pw = os.environ["ANCHORE_CLI_PASS"]
+
     if wait_engine:
-        wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout)
+        wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout, user=anchore_user, pw=anchore_pw)
 
     elif setup_engine:
         get_config()
         start_anchore_engine()
-        wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout)
+        wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout, user=anchore_user, pw=anchore_pw)
 
     elif image_name:
         if analyze_image:
             img_digest = add_image(image_name)
-            wait_image_analyzed(img_digest, timeout)
+            wait_image_analyzed(img_digest, timeout, user=anchore_user, pw=anchore_pw)
         if generate_report:
             generate_reports(image_name, content_type, report_type, vuln_type)
             print ("\n")
