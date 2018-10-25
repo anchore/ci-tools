@@ -44,9 +44,9 @@ workflows:
           requires:
             - build
       - anchore/image_scan:
-          image_name: python:latest
+          image_name: anchore/anchore-engine:latest
       - anchore/image_scan:
-          image_name: "btodhunter/anchore-engine:latest"
+          image_name: "anchore/private_testing:anchore-ui-dev"
           private_registry: True
           registry_name: docker.io
           registry_user: $DOCKERHUB_USER
