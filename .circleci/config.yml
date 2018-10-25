@@ -49,5 +49,5 @@ workflows:
           image_name: "anchore/private_testing:anchore-ui-dev"
           private_registry: True
           registry_name: docker.io
-          registry_user: $DOCKERHUB_USER
-          registry_pass: $DOCKERHUB_PASSWORD
+          registry_user: $DOCKER_USER
+          registry_pass: $DOCKER_PASS
