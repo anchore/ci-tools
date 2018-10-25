@@ -1,0 +1,53 @@
+version: 2.1
+
+orbs:
+  anchore: anchore/anchore-engine@dev:0.1.0
+jobs:
+  build:
+    docker:
+      - image: docker:stable-git
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: build Docker image
+          command: |
+            docker build -t ${CIRCLE_PROJECT_REPONAME}:ci -f .circleci/Dockerfile .
+      - run:
+          name: Save Docker image
+          command: |
+            rm -rf /home/circleci/workspace/caches/
+            mkdir /home/circleci/workspace/caches/ -p
+            docker save -o /home/circleci/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar ${CIRCLE_PROJECT_REPONAME}:ci
+      - persist_to_workspace:
+          root: /home/circleci/workspace/
+          paths:
+            - caches/*
+
+  local_image_scan:
+    executor: anchore/anchore_engine
+    steps:
+      - attach_workspace:
+          at: /home/circleci/workspace/
+      - run:
+          name: Load Docker image layer cache
+          command: |
+            docker load -i /home/circleci/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar || true
+      - anchore/analyze_local_image:
+          image_name: ${CIRCLE_PROJECT_REPONAME}:ci
+
+workflows:
+  scan_image:
+    jobs:
+      - build
+      - local_image_scan:
+          requires:
+            - build
+      - anchore/image_scan:
+          image_name: python:latest
+      - anchore/image_scan:
+          image_name: "btodhunter/anchore-engine:latest"
+          private_registry: True
+          registry_name: docker.io
+          registry_user: $DOCKERHUB_USER
+          registry_pass: $DOCKERHUB_PASSWORD
