@@ -1,48 +1,34 @@
 version: 2.1
 
 orbs:
-  anchore: anchore/anchore-engine@dev:0.1.0
+  anchore: anchore/anchore-engine@dev:latest
+  circleci: circleci/circleci-cli@1.0.0
 jobs:
-  build:
-    docker:
-      - image: docker:stable-git
-    steps:
-      - checkout
-      - setup_remote_docker
-      - run:
-          name: build Docker image
-          command: |
-            docker build -t ${CIRCLE_PROJECT_REPONAME}:ci -f .circleci/Dockerfile .
-      - run:
-          name: Save Docker image
-          command: |
-            rm -rf ~/workspace/caches/
-            mkdir ~/workspace/caches/ -p
-            docker save -o ~/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar ${CIRCLE_PROJECT_REPONAME}:ci
-      - persist_to_workspace:
-          root: ~/workspace/
-          paths:
-            - caches/*
-
   local_image_scan:
     executor: anchore/anchore_engine
     steps:
-      - attach_workspace:
-          at: ~/workspace/
+      - checkout
       - run:
-          name: Load Docker image layer cache
-          command: |
-            docker load -i ~/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar
+          name: build container
+          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci -f .circleci/Dockerfile .
       - anchore/analyze_local_image:
           image_name: ${CIRCLE_PROJECT_REPONAME}:ci
 
+    publish_dev_orb:
+      docker:
+        - image: circleci/circleci-cli:latest
+      steps:
+        - checkout
+        - run:
+            name: Validate orb
+            command: circleci orb validate circleci-orbs/anchore-engine/orb.yml --token ${CIRCLECI_TOKEN}
+        - run:
+            name: Publish dev orb
+            command: circleci orb publish circleci-orbs/anchore-engine/orb.yml anchore/anchore-engine@dev:latest --token ${CIRCLECI_TOKEN}
 workflows:
   scan_image:
     jobs:
-      - build
-      - local_image_scan:
-          requires:
-            - build
+      - local_image_scan
       - anchore/image_scan:
           image_name: 'anchore/anchore-engine:latest'
       - anchore/image_scan:
