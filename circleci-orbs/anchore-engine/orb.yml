@@ -1,120 +1,3 @@
-# Note: YAML anchors allow an object to be re-used, reducing duplication.
-# The ampersand declares an alias for an object, then later the `*name`
-# syntax dereferences it.
-.setup_anchore_engine_configs: &setup_anchore_engine_configs |
-  mkdir config db
-  cat \<< EOF \>> config/config.yaml
-  # Anchore Service Configuration File
-  log_level: 'INFO'
-  cleanup_images: True
-  host_id: '${ANCHORE_HOST_ID}'
-  internal_ssl_verify: False
-  auto_restart_services: True
-  credentials:
-    users:
-       admin:
-         password: << parameters.anchore_cli_pass >>
-         email: 'admin@myemail.com'
-         external_service_auths:
-    database:
-      db_connect: 'postgresql+pg8000://postgres:mysecretpassword@anchore-db:5432/postgres'
-      db_connect_args:
-        timeout: 120
-        ssl: False
-      db_pool_size: 30
-      db_pool_max_overflow: 100
-  services:
-    apiext:
-      enabled: True
-      require_auth: True
-      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
-      listen: '0.0.0.0'
-      port: 8228
-      authorization_handler: native
-    catalog:
-      enabled: True
-      require_auth: True
-      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
-      listen: '0.0.0.0'
-      port: 8082
-      archive:
-        compression:
-          enabled: False
-          min_size_kbytes: 100
-        storage_driver:
-          name: db
-          config: {}
-      cycle_timer_seconds: '1'
-      cycle_timers:
-        image_watcher: 3600
-        policy_eval: 3600
-        vulnerability_scan: 14400
-        analyzer_queue: 1
-        notifications: 30
-        service_watcher: 15
-        policy_bundle_sync: 300
-        repo_watcher: 60
-    simplequeue:
-      enabled: True
-      require_auth: True
-      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
-      listen: '0.0.0.0'
-      port: 8083
-    analyzer:
-      enabled: True
-      require_auth: True
-      cycle_timer_seconds: 1
-      max_threads: 1
-      analyzer_driver: 'nodocker'
-      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
-      listen: '0.0.0.0'
-      port: 8084
-    policy_engine:
-      enabled: True
-      require_auth: True
-      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
-      listen: '0.0.0.0'
-      port: 8087
-      cycle_timer_seconds: 1
-      cycle_timers:
-        feed_sync: 21600
-        feed_sync_checker: 3600
-  EOF
-
-  cat \<< EOF \>> docker-compose.yaml
-  # Anchore engine docker-compose configuration.
-  version: '2'
-  services:
-    anchore-engine:
-      image: docker.io/anchore/anchore-engine:v0.2.4
-      depends_on:
-       - anchore-db
-      ports:
-       - "8228:8228"
-       - "8338:8338"
-      volumes:
-       - ./config:/config/:z
-      logging:
-       driver: "json-file"
-       options:
-        max-size: 100m
-      environment:
-       - ANCHORE_HOST_ID=dockerhostid-anchore-engine
-       - ANCHORE_ENDPOINT_HOSTNAME=anchore-engine
-    anchore-db:
-      image: "anchore/engine-db-preload:v0.2.4"
-      volumes:
-       - ./db:/var/lib/postgresql/data/pgdata/:z
-      environment:
-        - POSTGRES_PASSWORD=mysecretpassword
-        - PGDATA=/var/lib/postgresql/data/pgdata/
-      logging:
-       driver: "json-file"
-       options:
-        max-size: 100m
-  EOF
-
-# Start of CircleCi orb definition
 version: 2.1
 description: anchore engine container security scanning
 
@@ -268,8 +151,116 @@ commands:
         default: "${ANCHORE_CLI_PASS}"
     steps:
       - run:
-          name: Setup anchore engine configs.
-          command: *setup_anchore_engine_configs
+          name: Create anchore engine configuration files.
+          command: |
+            mkdir config db
+            cat \<< EOF \>> config/config.yaml
+            # Anchore Service Configuration File
+            log_level: 'INFO'
+            cleanup_images: True
+            host_id: 'dockerhostid-anchore-engine'
+            internal_ssl_verify: False
+            auto_restart_services: True
+            credentials:
+              users:
+                 admin:
+                   password: '<< parameters.anchore_cli_pass >>'
+                   email: 'admin@myemail.com'
+                   external_service_auths:
+              database:
+                db_connect: 'postgresql+pg8000://postgres:mysecretpassword@anchore-db:5432/postgres'
+                db_connect_args:
+                  timeout: 120
+                  ssl: False
+                db_pool_size: 30
+                db_pool_max_overflow: 100
+            services:
+              apiext:
+                enabled: True
+                require_auth: True
+                endpoint_hostname: 'anchore-engine'
+                listen: '0.0.0.0'
+                port: 8228
+                authorization_handler: native
+              catalog:
+                enabled: True
+                require_auth: True
+                endpoint_hostname: 'anchore-engine'
+                listen: '0.0.0.0'
+                port: 8082
+                archive:
+                  compression:
+                    enabled: False
+                    min_size_kbytes: 100
+                  storage_driver:
+                    name: db
+                    config: {}
+                cycle_timer_seconds: '1'
+                cycle_timers:
+                  image_watcher: 3600
+                  policy_eval: 3600
+                  vulnerability_scan: 14400
+                  analyzer_queue: 1
+                  notifications: 30
+                  service_watcher: 15
+                  policy_bundle_sync: 300
+                  repo_watcher: 60
+              simplequeue:
+                enabled: True
+                require_auth: True
+                endpoint_hostname: 'anchore-engine'
+                listen: '0.0.0.0'
+                port: 8083
+              analyzer:
+                enabled: True
+                require_auth: True
+                cycle_timer_seconds: 1
+                max_threads: 1
+                analyzer_driver: 'nodocker'
+                endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
+                listen: '0.0.0.0'
+                port: 8084
+              policy_engine:
+                enabled: True
+                require_auth: True
+                endpoint_hostname: 'anchore-engine'
+                listen: '0.0.0.0'
+                port: 8087
+                cycle_timer_seconds: 1
+                cycle_timers:
+                  feed_sync: 21600
+                  feed_sync_checker: 3600
+            EOF
+
+            cat \<< EOF \>> docker-compose.yaml
+            # Anchore engine docker-compose configuration.
+            version: '2'
+            services:
+              anchore-engine:
+                image: docker.io/anchore/anchore-engine:v0.2.4
+                depends_on:
+                 - anchore-db
+                ports:
+                 - "8228:8228"
+                 - "8338:8338"
+                volumes:
+                 - ./config:/config/:z
+                logging:
+                 driver: "json-file"
+                 options:
+                  max-size: 100m
+              anchore-db:
+                image: "anchore/engine-db-preload:v0.2.4"
+                volumes:
+                 - ./db:/var/lib/postgresql/data/pgdata/:z
+                environment:
+                  - POSTGRES_PASSWORD=mysecretpassword
+                  - PGDATA=/var/lib/postgresql/data/pgdata/
+                logging:
+                 driver: "json-file"
+                 options:
+                  max-size: 100m
+            EOF
       - run:
           name: Start anchore engine.
           command: |
