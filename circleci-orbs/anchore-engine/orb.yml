@@ -9,27 +9,17 @@ executors:
         description: Password used for accessing anchore engine (use env var to populate).
         type: string
         default: "anchore-CWE-259"
-      registry_user:
-        description: Username for private registry (use env var to populate).
-        type: string
-        default: "${DOCKER_USER}"
-      registry_pass:
-        description: Password for private registry (use env var to populate).
-        type: string
-        default: "${DOCKER_PASS}"
     environment:
       ANCHORE_CLI_USER: "admin"
       ANCHORE_CLI_PASS: << parameters.anchore_cli_pass >>
       ANCHORE_CLI_SSL_VERIFY: "n"
-      ANCHORE_REGISTRY_USER: << parameters.registry_user >>
-      ANCHORE_REGISTRY_PASS: << parameters.registry_pass >>
     machine: true
 
 commands:
   add_private_registry:
     description: |
       Adds credentials for private registries to anchore engine.
-      All parameters are required if using this command.
+      Set registry credentials with $DOCKER_USER & $DOCKER_PASS env vars.
       Must run on executor with anchore-engine running & anchore-cli installed.
     parameters:
       registry_name:
@@ -39,11 +29,11 @@ commands:
       registry_user:
         description: Username for private registry (use env var to populate).
         type: string
-        default: "${ANCHORE_REGISTRY_USER}"
+        default: "${DOCKER_USER}"
       registry_pass:
         description: Password for private registry (use env var to populate).
         type: string
-        default: "${ANCHORE_REGISTRY_PASS}"
+        default: "${DOCKER_PASS}"
     steps:
       - run:
           name: Add private registry credentials to anchore engine.
@@ -217,7 +207,7 @@ commands:
                 cycle_timer_seconds: 1
                 max_threads: 1
                 analyzer_driver: 'nodocker'
-                endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
+                endpoint_hostname: 'anchore-engine'
                 listen: '0.0.0.0'
                 port: 8084
               policy_engine:
@@ -275,7 +265,8 @@ jobs:
     description: |
       Performs a static security analysis of docker container with anchore engine.
       Anchore engine pulls image from public/private docker registries.
-      Requires registry credentials to access private images.
+      Requires registry credentials to access private images, use ENV vars
+      $DOCKER_USER & $DOCKER_PASS
     parameters:
       image_name:
         description: Image repository & tag (eg - "anchore/anchore-engine:latest").
@@ -288,6 +279,14 @@ jobs:
         description: Name of private registry (eg - docker.io)
         type: string
         default: "docker.io"
+      registry_user:
+        description: Username for private registry (use env var to populate).
+        type: string
+        default: "${DOCKER_USER}"
+      registry_pass:
+        description: Password for private registry (use env var to populate).
+        type: string
+        default: "${DOCKER_PASS}"
       timeout:
         description: Timeout used for Anchore Engine image scanning.
         type: string
@@ -300,6 +299,8 @@ jobs:
           steps:
             - add_private_registry:
                 registry_name: << parameters.registry_name >>
+                registry_user: << parameters.registry_user >>
+                registry_pass: << parameters.registry_pass >>
       - analyze_image:
           image_name: << parameters.image_name >>
           timeout: << parameters.timeout >>
