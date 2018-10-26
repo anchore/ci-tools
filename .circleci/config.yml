@@ -44,8 +44,8 @@ workflows:
           requires:
             - build
       - anchore/image_scan:
-          image_name: anchore/anchore-engine:latest
+          image_name: 'anchore/anchore-engine:latest'
       - anchore/image_scan:
-          image_name: anchore/private_testing:anchore-ui-dev
+          image_name: 'anchore/private_testing:anchore-ui-dev'
           private_registry: True
-          timeout: 500
+          timeout: '500'
