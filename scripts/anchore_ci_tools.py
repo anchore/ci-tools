@@ -95,12 +95,12 @@ def get_config(config_path='/config/config.yaml', config_url='https://raw.github
     if not os.path.exists(conf_dir):
         os.makedirs(conf_dir)
 
-    r = requests.get(config_url, stream=True)
-    if r.status_code == 200:
-        with open(config_path, 'wb') as file:
-            file.write(r.content)
-    else:
-        raise Exception ("Failed to download config file {} - response httpcode={} data={}".format(config_url, r.status_code, r.text))
+    with requests.get(config_url, stream=True) as r:
+        if r.status_code == 200:
+            with open(config_path, 'wb') as file:
+                file.write(r.content)
+        else:
+            raise Exception ("Failed to download config file {} - response httpcode={} data={}".format(config_url, r.status_code, r.text))
 
     return True
 
@@ -131,6 +131,7 @@ def is_engine_running():
 def is_image_analyzed(image_digest, user='admin', pw='foobar'):
     image_info = get_image_info(image_digest, user=user, pw=pw)
     img_status = image_info['analysis_status']
+
     if img_status == 'analyzed':
         return True, img_status
     if img_status == 'analysis_failed':
@@ -206,6 +207,7 @@ def start_anchore_engine():
 def wait_engine_available(health_check_urls=[], timeout=300, user='admin', pw='foobar'):
     start_ts = time.time()
     last_status = str()
+
     for url in health_check_urls:
         is_available = False
         while not is_available:
@@ -230,6 +232,7 @@ def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
     last_img_status = str()
     is_analyzed = False
     start_ts = time.time()
+    
     while not is_analyzed:
         if time.time() - start_ts >= timeout:
             raise Exception("Timed out after {} seconds.".format(timeout))
