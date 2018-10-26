@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-  anchore: anchore/anchore-engine@dev:0.1.5
+  anchore: anchore/anchore-engine@dev:0.1.0
 jobs:
   build:
     docker:
@@ -16,11 +16,11 @@ jobs:
       - run:
           name: Save Docker image
           command: |
-            rm -rf /home/circleci/workspace/caches/
-            mkdir /home/circleci/workspace/caches/ -p
-            docker save -o /home/circleci/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar ${CIRCLE_PROJECT_REPONAME}:ci
+            rm -rf ~/workspace/caches/
+            mkdir ~/workspace/caches/ -p
+            docker save -o ~/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar ${CIRCLE_PROJECT_REPONAME}:ci
       - persist_to_workspace:
-          root: /home/circleci/workspace/
+          root: ~/workspace/
           paths:
             - caches/*
 
@@ -28,11 +28,11 @@ jobs:
     executor: anchore/anchore_engine
     steps:
       - attach_workspace:
-          at: /home/circleci/workspace/
+          at: ~/workspace/
       - run:
           name: Load Docker image layer cache
           command: |
-            docker load -i /home/circleci/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar || true
+            docker load -i ~/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar
       - anchore/analyze_local_image:
           image_name: ${CIRCLE_PROJECT_REPONAME}:ci
 
@@ -46,5 +46,6 @@ workflows:
       - anchore/image_scan:
           image_name: anchore/anchore-engine:latest
       - anchore/image_scan:
-          image_name: "anchore/private_testing:anchore-ui-dev"
+          image_name: anchore/private_testing:anchore-ui-dev
           private_registry: True
+          timeout: 500

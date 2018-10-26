@@ -1,6 +1,82 @@
 version: 2.1
 description: anchore engine container security scanning
 
+examples:
+  standard_image_scan:
+    description: Use this job to scan an image located in a public registry.
+    usage:
+      version: 2.1
+      orbs:
+        anchore-engine: anchore/anchore-engine@1.0.0
+      workflows:
+        scan_image:
+          jobs:
+            - anchore/image_scan:
+                image_name: anchore/anchore-engine:latest
+                timeout: 500
+
+  private_image_scan:
+    description: Use this job to scan an image located in a private registry.
+    usage:
+      version: 2.1
+      orbs:
+        anchore-engine: anchore/anchore-engine@1.0.0
+      workflows:
+        scan_image:
+          jobs:
+            - anchore/image_scan:
+                image_name: anchore/anchore-engine:latest
+                private_registry: True
+
+  local_image_scan:
+    description: |
+      Use this command within a container build pipeline, it can be used to
+      scan an image that hasn't been pushed to a registry yet. This example
+      demonstates one way to do a build pipeline.
+    usage:
+      version: 2.1
+      orbs:
+        anchore-engine: anchore/anchore-engine@1.0.0
+      jobs:
+        build:
+          docker:
+            - image: docker:stable-git
+          steps:
+            - checkout
+            - setup_remote_docker
+            - run:
+                name: build Docker image
+                command: |
+                  docker build -t ${CIRCLE_PROJECT_REPONAME}:ci .
+            - run:
+                name: Save Docker image
+                command: |
+                  rm -rf ~/workspace/caches/
+                  mkdir ~/workspace/caches/ -p
+                  docker save -o ~/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar ${CIRCLE_PROJECT_REPONAME}:ci
+            - persist_to_workspace:
+                root: ~/workspace/
+                paths:
+                  - caches/*
+        local_image_scan:
+          executor: anchore/anchore_engine
+          steps:
+            - attach_workspace:
+                at: ~/workspace/
+            - run:
+                name: Load Docker image layer cache
+                command: |
+                  docker load -i ~/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar
+            - anchore/analyze_local_image:
+                image_name: ${CIRCLE_PROJECT_REPONAME}:ci
+      workflows:
+        scan_image:
+          jobs:
+            - build
+            - local_image_scan:
+                requires:
+                  - build
+
 executors:
   anchore_engine:
     description: Machine runner with anchore engine default environment variables set.
@@ -120,7 +196,7 @@ commands:
             ln -s /tmp/anchore_ci_tools.py /home/circleci/bin/anchore_ci_tools
 
   parse_reports:
-    description: Prints analysis report of package vulnerabilites.
+    description: Prints analysis report of package vulnerabilites using JQ.
     steps:
       - run:
           name: View parsed vulnerability analysis report.
@@ -132,8 +208,8 @@ commands:
 
   setup_anchore_engine:
     description: |
-      Setup anchore-engine with docker compose.
-      Must be run on executor with anchore_ci_tools.py & anchorecli installed.
+      Setup anchore-engine using docker compose and default configuration.
+      Must be run on executor with anchore_ci_tools.py, anchorecli & docker-compose installed.
     parameters:
       anchore_cli_pass:
         description: Password used for accessing anchore engine (use env var to populate).
@@ -156,7 +232,6 @@ commands:
                  admin:
                    password: '<< parameters.anchore_cli_pass >>'
                    email: 'admin@myemail.com'
-                   external_service_auths:
               database:
                 db_connect: 'postgresql+pg8000://postgres:mysecretpassword@anchore-db:5432/postgres'
                 db_connect_args:
