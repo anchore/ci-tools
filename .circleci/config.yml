@@ -14,17 +14,18 @@ jobs:
       - anchore/analyze_local_image:
           image_name: ${CIRCLE_PROJECT_REPONAME}:ci
 
-    publish_dev_orb:
-      docker:
-        - image: circleci/circleci-cli:latest
-      steps:
-        - checkout
-        - run:
-            name: Validate orb
-            command: circleci orb validate circleci-orbs/anchore-engine/orb.yml --token ${CIRCLECI_TOKEN}
-        - run:
-            name: Publish dev orb
-            command: circleci orb publish circleci-orbs/anchore-engine/orb.yml anchore/anchore-engine@dev:latest --token ${CIRCLECI_TOKEN}
+  publish_dev_orb:
+    docker:
+      - image: circleci/circleci-cli:latest
+    steps:
+      - checkout
+      - run:
+          name: Validate orb
+          command: circleci orb validate circleci-orbs/anchore-engine/orb.yml --token ${CIRCLECI_TOKEN}
+      - run:
+          name: Publish dev orb
+          command: circleci orb publish circleci-orbs/anchore-engine/orb.yml anchore/anchore-engine@dev:latest --token ${CIRCLECI_TOKEN}
+
 workflows:
   scan_image:
     jobs:
