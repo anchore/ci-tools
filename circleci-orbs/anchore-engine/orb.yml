@@ -13,7 +13,7 @@ examples:
           jobs:
             - anchore/image_scan:
                 image_name: anchore/anchore-engine:latest
-                timeout: 500
+                timeout: '300'
 
   private_image_scan:
     description: Use this job to scan an image located in a private registry.
@@ -26,7 +26,11 @@ examples:
           jobs:
             - anchore/image_scan:
                 image_name: anchore/anchore-engine:latest
+                timeout: '300'
                 private_registry: True
+                registry_name: docker.io
+                registry_user: "${DOCKER_USER}"
+                registry_pass: "${DOCKER_PASS}"
 
   local_image_scan:
     description: |
@@ -69,6 +73,7 @@ examples:
                   docker load -i ~/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar
             - anchore/analyze_local_image:
                 image_name: ${CIRCLE_PROJECT_REPONAME}:ci
+                timeout: '300'
       workflows:
         scan_image:
           jobs:
@@ -232,6 +237,7 @@ commands:
                  admin:
                    password: '<< parameters.anchore_cli_pass >>'
                    email: 'admin@myemail.com'
+                   external_service_auths:
               database:
                 db_connect: 'postgresql+pg8000://postgres:mysecretpassword@anchore-db:5432/postgres'
                 db_connect_args:
