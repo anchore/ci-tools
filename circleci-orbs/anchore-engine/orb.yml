@@ -31,12 +31,6 @@
       listen: '0.0.0.0'
       port: 8228
       authorization_handler: native
-    kubernetes_webhook:
-      enabled: True
-      require_auth: False
-      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
-      listen: '0.0.0.0'
-      port: 8338
     catalog:
       enabled: True
       require_auth: True
@@ -84,40 +78,40 @@
       cycle_timer_seconds: 1
       cycle_timers:
         feed_sync: 21600
-  feed_sync_checker: 3600
+        feed_sync_checker: 3600
   EOF
 
   cat \<< EOF \>> docker-compose.yaml
   # Anchore engine docker-compose configuration.
   version: '2'
   services:
-  anchore-engine:
-    image: docker.io/anchore/anchore-engine:latest
-    depends_on:
-     - anchore-db
-    ports:
-     - "8228:8228"
-     - "8338:8338"
-    volumes:
-     - ./config:/config/:z
-    logging:
-     driver: "json-file"
-     options:
-      max-size: 100m
-    environment:
-     - ANCHORE_HOST_ID=dockerhostid-anchore-engine
-     - ANCHORE_ENDPOINT_HOSTNAME=anchore-engine
-  anchore-db:
-    image: "anchore/engine-db-preload:latest"
-    volumes:
-     - ./db:/var/lib/postgresql/data/pgdata/:z
-    environment:
-      - POSTGRES_PASSWORD=mysecretpassword
-      - PGDATA=/var/lib/postgresql/data/pgdata/
-    logging:
-     driver: "json-file"
-     options:
-      max-size: 100m
+    anchore-engine:
+      image: docker.io/anchore/anchore-engine:v0.2.4
+      depends_on:
+       - anchore-db
+      ports:
+       - "8228:8228"
+       - "8338:8338"
+      volumes:
+       - ./config:/config/:z
+      logging:
+       driver: "json-file"
+       options:
+        max-size: 100m
+      environment:
+       - ANCHORE_HOST_ID=dockerhostid-anchore-engine
+       - ANCHORE_ENDPOINT_HOSTNAME=anchore-engine
+    anchore-db:
+      image: "anchore/engine-db-preload:v0.2.4"
+      volumes:
+       - ./db:/var/lib/postgresql/data/pgdata/:z
+      environment:
+        - POSTGRES_PASSWORD=mysecretpassword
+        - PGDATA=/var/lib/postgresql/data/pgdata/
+      logging:
+       driver: "json-file"
+       options:
+        max-size: 100m
   EOF
 
 # Start of CircleCi orb definition
