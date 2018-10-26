@@ -2,7 +2,6 @@ version: 2.1
 
 orbs:
   anchore: anchore/anchore-engine@dev:latest
-  circleci: circleci/circleci-cli@1.0.0
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
