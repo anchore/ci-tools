@@ -12,11 +12,11 @@ executors:
       registry_user:
         description: Username for private registry (use env var to populate).
         type: string
-        default: "${DOCKER_PASS}"
+        default: "${DOCKER_USER}"
       registry_pass:
         description: Password for private registry (use env var to populate).
         type: string
-        default: "${DOCKER_USER}"
+        default: "${DOCKER_PASS}"
     environment:
       ANCHORE_CLI_USER: "admin"
       ANCHORE_CLI_PASS: << parameters.anchore_cli_pass >>
