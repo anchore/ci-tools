@@ -1,3 +1,126 @@
+# Note: YAML anchors allow an object to be re-used, reducing duplication.
+# The ampersand declares an alias for an object, then later the `*name`
+# syntax dereferences it.
+.setup_anchore_engine_configs: &setup_anchore_engine_configs |
+  mkdir config db
+  cat \<< EOF \>> config/config.yaml
+  # Anchore Service Configuration File
+  log_level: 'INFO'
+  cleanup_images: True
+  host_id: '${ANCHORE_HOST_ID}'
+  internal_ssl_verify: False
+  auto_restart_services: True
+  credentials:
+    users:
+       admin:
+         password: << parameters.anchore_cli_pass >>
+         email: 'admin@myemail.com'
+         external_service_auths:
+    database:
+      db_connect: 'postgresql+pg8000://postgres:mysecretpassword@anchore-db:5432/postgres'
+      db_connect_args:
+        timeout: 120
+        ssl: False
+      db_pool_size: 30
+      db_pool_max_overflow: 100
+  services:
+    apiext:
+      enabled: True
+      require_auth: True
+      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
+      listen: '0.0.0.0'
+      port: 8228
+      authorization_handler: native
+    kubernetes_webhook:
+      enabled: True
+      require_auth: False
+      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
+      listen: '0.0.0.0'
+      port: 8338
+    catalog:
+      enabled: True
+      require_auth: True
+      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
+      listen: '0.0.0.0'
+      port: 8082
+      archive:
+        compression:
+          enabled: False
+          min_size_kbytes: 100
+        storage_driver:
+          name: db
+          config: {}
+      cycle_timer_seconds: '1'
+      cycle_timers:
+        image_watcher: 3600
+        policy_eval: 3600
+        vulnerability_scan: 14400
+        analyzer_queue: 1
+        notifications: 30
+        service_watcher: 15
+        policy_bundle_sync: 300
+        repo_watcher: 60
+    simplequeue:
+      enabled: True
+      require_auth: True
+      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
+      listen: '0.0.0.0'
+      port: 8083
+    analyzer:
+      enabled: True
+      require_auth: True
+      cycle_timer_seconds: 1
+      max_threads: 1
+      analyzer_driver: 'nodocker'
+      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
+      listen: '0.0.0.0'
+      port: 8084
+    policy_engine:
+      enabled: True
+      require_auth: True
+      endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
+      listen: '0.0.0.0'
+      port: 8087
+      cycle_timer_seconds: 1
+      cycle_timers:
+        feed_sync: 21600
+  feed_sync_checker: 3600
+  EOF
+
+  cat \<< EOF \>> docker-compose.yaml
+  # Anchore engine docker-compose configuration.
+  version: '2'
+  services:
+  anchore-engine:
+    image: docker.io/anchore/anchore-engine:latest
+    depends_on:
+     - anchore-db
+    ports:
+     - "8228:8228"
+     - "8338:8338"
+    volumes:
+     - ./config:/config/:z
+    logging:
+     driver: "json-file"
+     options:
+      max-size: 100m
+    environment:
+     - ANCHORE_HOST_ID=dockerhostid-anchore-engine
+     - ANCHORE_ENDPOINT_HOSTNAME=anchore-engine
+  anchore-db:
+    image: "anchore/engine-db-preload:latest"
+    volumes:
+     - ./db:/var/lib/postgresql/data/pgdata/:z
+    environment:
+      - POSTGRES_PASSWORD=mysecretpassword
+      - PGDATA=/var/lib/postgresql/data/pgdata/
+    logging:
+     driver: "json-file"
+     options:
+      max-size: 100m
+  EOF
+
+# Start of CircleCi orb definition
 version: 2.1
 description: anchore engine container security scanning
 
@@ -9,10 +132,20 @@ executors:
         description: Password used for accessing anchore engine (use env var to populate).
         type: string
         default: "anchore-CWE-259"
+      registry_user:
+        description: Username for private registry (use env var to populate).
+        type: string
+        default: "${DOCKER_PASS}"
+      registry_pass:
+        description: Password for private registry (use env var to populate).
+        type: string
+        default: "${DOCKER_USER}"
     environment:
       ANCHORE_CLI_USER: "admin"
       ANCHORE_CLI_PASS: << parameters.anchore_cli_pass >>
       ANCHORE_CLI_SSL_VERIFY: "n"
+      ANCHORE_REGISTRY_USER: << parameters.registry_user >>
+      ANCHORE_REGISTRY_PASS: << parameters.registry_pass >>
     machine: true
 
 commands:
@@ -29,11 +162,11 @@ commands:
       registry_user:
         description: Username for private registry (use env var to populate).
         type: string
-        default: "${DOCKER_USER}"
+        default: "${ANCHORE_REGISTRY_USER}"
       registry_pass:
         description: Password for private registry (use env var to populate).
         type: string
-        default: "${DOCKER_PASS}"
+        default: "${ANCHORE_REGISTRY_PASS}"
     steps:
       - run:
           name: Add private registry credentials to anchore engine.
@@ -42,17 +175,13 @@ commands:
   analyze_local_image:
     description: |
       Pushes a local image to a temporary registry container.
-      Image is then scaned with anchore engine. Stores all reports as artifacts.
+      Image is then scanned with anchore engine. Stores all reports as artifacts.
       Must be run on executor with docker-compose & sudo.
     parameters:
       analysis_fail:
         description: Set to True if pipeline should stop on a failed image analysis.
         type: boolean
         default: False
-      anchore_cli_pass:
-        description: Password used for accessing anchore engine (use env var to populate).
-        type: string
-        default: "anchore-CWE-259"
       image_name:
         description: Image repository & tag (eg - "anchore/anchore-engine:latest").
         type: string
@@ -62,8 +191,7 @@ commands:
         default: "300"
     steps:
       - install_tools
-      - setup_anchore_engine:
-          anchore_cli_pass: << parameters.anchore_cli_pass >>
+      - setup_anchore_engine
       - run:
           name: Start registry container & push local image.
           command: |
@@ -143,17 +271,15 @@ commands:
       anchore_cli_pass:
         description: Password used for accessing anchore engine (use env var to populate).
         type: string
-        default: "anchore-CWE-259"
+        default: "${ANCHORE_CLI_PASS}"
     steps:
+      - run:
+          name: Setup anchore engine configs.
+          command: *setup_anchore_engine_configs
       - run:
           name: Start anchore engine.
           command: |
             pip install --upgrade docker-compose
-            curl -o docker-compose.yaml https://raw.githubusercontent.com/anchore/anchore-engine/master/scripts/docker-compose/docker-compose.yaml
-            sed -i 's|postgres:9|anchore/engine-db-preload:latest|' docker-compose.yaml
-            mkdir config db
-            curl -o config/config.yaml https://raw.githubusercontent.com/anchore/anchore-engine/master/scripts/docker-compose/config.yaml
-            sed -i 's/foobar/<< parameters.anchore_cli_pass >>/' config/config.yaml
             docker-compose up -d
             printf "\n%s\n" "Waiting for anchore engine to start..."
             anchore_ci_tools --wait
@@ -166,10 +292,6 @@ jobs:
       Anchore engine pulls image from public/private docker registries.
       Requires registry credentials to access private images.
     parameters:
-      anchore_cli_pass:
-        description: Password used for accessing anchore engine (use env var to populate).
-        type: string
-        default: "anchore-CWE-259"
       image_name:
         description: Image repository & tag (eg - "anchore/anchore-engine:latest").
         type: string
@@ -181,29 +303,18 @@ jobs:
         description: Name of private registry (eg - docker.io)
         type: string
         default: "docker.io"
-      registry_user:
-        description: Username for private registry (use env var to populate).
-        type: string
-        default: "${DOCKER_PASS}"
-      registry_pass:
-        description: Password for private registry (use env var to populate).
-        type: string
-        default: "${DOCKER_USER}"
       timeout:
         description: Timeout used for Anchore Engine image scanning.
         type: string
         default: "300"
     steps:
       - install_tools
-      - setup_anchore_engine:
-          anchore_cli_pass: << parameters.anchore_cli_pass >>
+      - setup_anchore_engine
       - when:
           condition: << parameters.private_registry >>
           steps:
             - add_private_registry:
                 registry_name: << parameters.registry_name >>
-                registry_user: << parameters.registry_user >>
-                registry_pass: << parameters.registry_pass >>
       - analyze_image:
           image_name: << parameters.image_name >>
           timeout: << parameters.timeout >>

@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-  anchore: anchore/anchore-engine@dev:0.1.0
+  anchore: anchore/anchore-engine@dev:0.1.5
 jobs:
   build:
     docker:
