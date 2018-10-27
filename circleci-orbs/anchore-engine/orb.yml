@@ -35,52 +35,22 @@ examples:
   local_image_scan:
     description: |
       Use this command within a container build pipeline, it can be used to
-      scan an image that hasn't been pushed to a registry yet. This example
-      demonstates one way to do a build pipeline.
+      scan an image that hasn't been pushed to a registry yet.
     usage:
       version: 2.1
       orbs:
         anchore-engine: anchore/anchore-engine@1.0.0
       jobs:
-        build:
-          docker:
-            - image: docker:stable-git
-          steps:
-            - checkout
-            - setup_remote_docker
-            - run:
-                name: build Docker image
-                command: |
-                  docker build -t ${CIRCLE_PROJECT_REPONAME}:ci .
-            - run:
-                name: Save Docker image
-                command: |
-                  rm -rf ~/workspace/caches/
-                  mkdir ~/workspace/caches/ -p
-                  docker save -o ~/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar ${CIRCLE_PROJECT_REPONAME}:ci
-            - persist_to_workspace:
-                root: ~/workspace/
-                paths:
-                  - caches/*
         local_image_scan:
           executor: anchore/anchore_engine
           steps:
-            - attach_workspace:
-                at: ~/workspace/
+            - checkout
             - run:
-                name: Load Docker image layer cache
-                command: |
-                  docker load -i ~/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar
+                name: build container
+                command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci .
             - anchore/analyze_local_image:
                 image_name: ${CIRCLE_PROJECT_REPONAME}:ci
-                timeout: '300'
-      workflows:
-        scan_image:
-          jobs:
-            - build
-            - local_image_scan:
-                requires:
-                  - build
+                timeout: '500'
 
 executors:
   anchore_engine:
