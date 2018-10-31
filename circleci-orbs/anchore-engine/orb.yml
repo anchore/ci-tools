@@ -12,7 +12,7 @@ examples:
         scan_image:
           jobs:
             - anchore/image_scan:
-                image_name: anchore/anchore-engine:latest
+                image_name: docker.io/anchore/anchore-engine:latest
                 timeout: '300'
 
   private_image_scan:
@@ -25,7 +25,7 @@ examples:
         scan_image:
           jobs:
             - anchore/image_scan:
-                image_name: anchore/anchore-engine:latest
+                image_name: docker.io/anchore/anchore-engine:latest
                 timeout: '300'
                 private_registry: True
                 registry_name: docker.io
@@ -101,7 +101,7 @@ commands:
         type: boolean
         default: False
       image_name:
-        description: Image repository & tag (eg - "anchore/anchore-engine:latest").
+        description: Image repository & tag (eg - "docker.io/anchore/anchore-engine:latest").
         type: string
       timeout:
         description: Timeout used for Anchore Engine image scanning.
@@ -320,7 +320,7 @@ jobs:
       $DOCKER_USER & $DOCKER_PASS
     parameters:
       image_name:
-        description: Image repository & tag (eg - "anchore/anchore-engine:latest").
+        description: Image repository & tag (eg - "docker.io/anchore/anchore-engine:latest").
         type: string
       private_registry:
         description: Set to True if image is only accessible from a private registry.
