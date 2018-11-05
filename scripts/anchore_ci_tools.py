@@ -90,7 +90,7 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
     return True
 
 
-def get_config(config_path='/config/config.yaml', config_url='https://raw.githubusercontent.com/anchore/anchore-engine/master/scripts/docker-compose/config.yaml'):
+def get_config(config_path='/config/config.yaml', config_url='https://raw.githubusercontent.com/anchore/anchore-engine/v0.2.4/scripts/docker-compose/config.yaml'):
     conf_dir = os.path.dirname(config_path)
     if not os.path.exists(conf_dir):
         os.makedirs(conf_dir)
@@ -232,7 +232,7 @@ def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
     last_img_status = str()
     is_analyzed = False
     start_ts = time.time()
-    
+
     while not is_analyzed:
         if time.time() - start_ts >= timeout:
             raise Exception("Timed out after {} seconds.".format(timeout))
