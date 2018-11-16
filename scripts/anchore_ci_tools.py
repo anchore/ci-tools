@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import argparse
 import json
@@ -12,7 +12,7 @@ global ALL_CONTENT_TYPES
 global ALL_REPORT_COMMANDS
 global ALL_VULN_TYPES
 
-ALL_CONTENT_TYPES = ['os', 'npm', 'gem', 'python', 'java']
+ALL_CONTENT_TYPES = ['os', 'python', 'java']
 ALL_REPORT_COMMANDS = {
     'content': 'anchore-cli --json image content',
     'vuln': 'anchore-cli --json image vuln',
@@ -23,8 +23,7 @@ ALL_VULN_TYPES = ['all', 'non-os', 'os']
 
 
 def add_image(image_name):
-    print ("Adding {} to anchore engine for scanning.".format(image_name))
-    sys.stdout.flush()
+    print ("Adding {} to anchore engine for scanning.".format(image_name), flush=True)
     cmd = 'anchore-cli --json image add {}'.format(image_name).split()
 
     try:
@@ -90,7 +89,7 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
     return True
 
 
-def get_config(config_path='/config/config.yaml', config_url='https://raw.githubusercontent.com/anchore/anchore-engine/v0.2.4/scripts/docker-compose/config.yaml'):
+def get_config(config_path='/config/config.yaml', config_url='https://raw.githubusercontent.com/anchore/anchore-engine/v0.3.0/scripts/docker-compose/config.yaml'):
     conf_dir = os.path.dirname(config_path)
     if not os.path.exists(conf_dir):
         os.makedirs(conf_dir)
@@ -120,7 +119,7 @@ def get_image_info(img_digest, user='admin', pw='foobar', engine_url='http://loc
 
 def is_engine_running():
     cmd = 'ps aux'.split()
-    output = subprocess.check_output(cmd)
+    output = subprocess.check_output(cmd, encoding='UTF-8')
 
     if 'anchore-manager' in output or 'twistd' in output:
         return True
@@ -157,11 +156,9 @@ def is_service_available(url, user='admin', pw='foobar'):
 
 def print_status_message(last_status, status):
     if not status == last_status:
-        print '\n\tStatus: {}'.format(status),
-        sys.stdout.flush()
+        print ('\n\tStatus: {}'.format(status), end='', flush=True)
     else:
-        print '\b.',
-        sys.stdout.flush()
+        print ('.', end='', flush=True)
 
     return True
 
@@ -189,9 +186,8 @@ def setup_parser():
 
 def start_anchore_engine():
     if not is_engine_running():
-        cmd = 'anchore-manager service start'.split()
-        print ("Starting anchore engine...")
-        sys.stdout.flush()
+        cmd = 'anchore-manager service start --all'.split()
+        print ("Starting anchore engine...", flush=True)
         log_file = open('anchore-engine.log', 'w')
 
         try:
@@ -220,15 +216,13 @@ def wait_engine_available(health_check_urls=[], timeout=300, user='admin', pw='f
             last_status = status
             time.sleep(10)
 
-    print ("\n\nAnchore engine is available!\n")
-    sys.stdout.flush()
+    print ("\n\nAnchore engine is available!\n", flush=True)
 
     return True
 
 
 def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
-    print ('Waiting for analysis to complete...')
-    sys.stdout.flush()
+    print ('Waiting for analysis to complete...', flush=True)
     last_img_status = str()
     is_analyzed = False
     start_ts = time.time()
@@ -243,29 +237,26 @@ def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
         last_img_status = img_status
         time.sleep(10)
 
-    print ("\n\nAnalysis completed!\n")
-    sys.stdout.flush()
+    print ("\n\nAnalysis completed!\n", flush=True)
 
     return True
 
 
 def write_log_from_output(command, file_name, ignore_exit_code=False):
     try:
-        output = subprocess.check_output(command)
+        output = subprocess.check_output(command, encoding='UTF-8')
         with open(file_name, 'w') as file:
             file.write(output)
 
     except Exception as error:
         if not ignore_exit_code:
-            print ('Failed to generate {}. Exception: {} \n {}'.format(file_name, error, error.output))
-            sys.stdout.flush()
+            print ('Failed to generate {}. Exception: {} \n {}'.format(file_name, error, error.output), flush=True)
             return False
         else:
             with open(file_name, 'w') as file:
                 file.write(error.output)
 
-    print ('Successfully generated {}.'.format(file_name))
-    sys.stdout.flush()
+    print ('Successfully generated {}.'.format(file_name), flush=True)
 
     return True
 
