@@ -1,5 +1,9 @@
 version: 2.1
-description: anchore engine container security scanning
+description: |
+  Anchore Engine is a docker container static analysis and policy-based compliance tool that
+  automates the inspection, analysis, and evaluation of images to allow high confidence in
+  container deployments by ensuring workload content meets the required criteria.
+  The source code for this orb can be found at https://github.com/anchore/ci-tools
 
 examples:
   standard_image_scan:
@@ -7,7 +11,7 @@ examples:
     usage:
       version: 2.1
       orbs:
-        anchore-engine: anchore/anchore-engine@1.0.0
+        anchore-engine: anchore/anchore-engine@1.0.1
       workflows:
         scan_image:
           jobs:
@@ -20,7 +24,7 @@ examples:
     usage:
       version: 2.1
       orbs:
-        anchore-engine: anchore/anchore-engine@1.0.0
+        anchore-engine: anchore/anchore-engine@1.0.1
       workflows:
         scan_image:
           jobs:
@@ -39,7 +43,7 @@ examples:
     usage:
       version: 2.1
       orbs:
-        anchore-engine: anchore/anchore-engine@1.0.0
+        anchore-engine: anchore/anchore-engine@1.0.1
       jobs:
         local_image_scan:
           executor: anchore/anchore_engine
@@ -64,7 +68,8 @@ executors:
       ANCHORE_CLI_USER: "admin"
       ANCHORE_CLI_PASS: << parameters.anchore_cli_pass >>
       ANCHORE_CLI_SSL_VERIFY: "n"
-    machine: true
+    machine:
+      image: circleci/classic:201808-01
 
 commands:
   add_private_registry:
@@ -164,9 +169,11 @@ commands:
       - run:
           name: Install anchore tools
           command: |
+            pyenv global 3.5.2
             pip install --upgrade pip
             pip install --upgrade anchorecli
-            curl -o /tmp/anchore_ci_tools.py https://raw.githubusercontent.com/anchore/ci-tools/v0.2.4/scripts/anchore_ci_tools.py
+            sudo ln -fs /opt/circleci/.pyenv/shims/python3 /usr/bin/python3
+            curl -o /tmp/anchore_ci_tools.py https://raw.githubusercontent.com/anchore/ci-tools/v0.3.0/scripts/anchore_ci_tools.py
             chmod +x /tmp/anchore_ci_tools.py
             ln -s /tmp/anchore_ci_tools.py /home/circleci/bin/anchore_ci_tools
 
@@ -201,13 +208,10 @@ commands:
             cleanup_images: True
             host_id: 'dockerhostid-anchore-engine'
             internal_ssl_verify: False
-            auto_restart_services: True
+            auto_restart_services: False
+            default_admin_password: '<< parameters.anchore_cli_pass >>'
+            default_admin_email: 'admin@myemail.com'
             credentials:
-              users:
-                 admin:
-                   password: '<< parameters.anchore_cli_pass >>'
-                   email: 'admin@myemail.com'
-                   external_service_auths:
               database:
                 db_connect: 'postgresql+pg8000://postgres:mysecretpassword@anchore-db:5432/postgres'
                 db_connect_args:
@@ -278,7 +282,7 @@ commands:
             version: '2'
             services:
               anchore-engine:
-                image: docker.io/anchore/anchore-engine:v0.2.4
+                image: docker.io/anchore/anchore-engine:v0.3.0
                 depends_on:
                  - anchore-db
                 ports:
@@ -291,7 +295,7 @@ commands:
                  options:
                   max-size: 100m
               anchore-db:
-                image: "anchore/engine-db-preload:v0.2.4"
+                image: "anchore/engine-db-preload:v0.3.0"
                 volumes:
                  - ./db:/var/lib/postgresql/data/pgdata/:z
                 environment:
