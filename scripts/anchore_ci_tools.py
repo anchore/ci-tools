@@ -28,6 +28,7 @@ def add_image(image_name):
 
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        output = output.decode('utf-8')
     except Exception as error:
         raise Exception ("Failed to add image to anchore engine. Error: {}".format(error.output))
 
@@ -119,7 +120,8 @@ def get_image_info(img_digest, user='admin', pw='foobar', engine_url='http://loc
 
 def is_engine_running():
     cmd = 'ps aux'.split()
-    output = subprocess.check_output(cmd, encoding='UTF-8')
+    output = subprocess.check_output(cmd)
+    output = output.decode('utf-8')
 
     if 'anchore-manager' in output or 'twistd' in output:
         return True
@@ -244,7 +246,8 @@ def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
 
 def write_log_from_output(command, file_name, ignore_exit_code=False):
     try:
-        output = subprocess.check_output(command, encoding='UTF-8')
+        output = subprocess.check_output(command)
+        output = output.decode('utf-8')
         with open(file_name, 'w') as file:
             file.write(output)
 
