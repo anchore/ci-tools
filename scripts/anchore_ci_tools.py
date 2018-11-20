@@ -30,7 +30,9 @@ def add_image(image_name):
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
         output = output.decode('utf-8')
     except Exception as error:
-        raise Exception ("Failed to add image to anchore engine. Error: {}".format(error.output))
+        output = error.output
+        output = output.decode('utf-8')
+        raise Exception ("Failed to add image to anchore engine. Error: {}".format(output))
 
     img_details = json.loads(output)
     img_digest = img_details[0]['imageDigest']
@@ -252,12 +254,14 @@ def write_log_from_output(command, file_name, ignore_exit_code=False):
             file.write(output)
 
     except Exception as error:
+        output = error.output
+        output = output.decode('utf-8')
         if not ignore_exit_code:
-            print ('Failed to generate {}. Exception: {} \n {}'.format(file_name, error, error.output), flush=True)
+            print ('Failed to generate {}. Exception: {} \n {}'.format(file_name, error, output), flush=True)
             return False
         else:
             with open(file_name, 'w') as file:
-                file.write(error.output)
+                file.write(output)
 
     print ('Successfully generated {}.'.format(file_name), flush=True)
 
