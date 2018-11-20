@@ -172,8 +172,8 @@ commands:
             pyenv global 3.5.2
             pip install --upgrade pip
             pip install --upgrade anchorecli
-            sudo ln -fs /opt/circleci/.pyenv/shims/python3 /usr/bin/python3
             curl -o /tmp/anchore_ci_tools.py https://raw.githubusercontent.com/anchore/ci-tools/v0.3.0/scripts/anchore_ci_tools.py
+            sed -i 's|/usr/bin/python3|/opt/circleci/.pyenv/shims/python3|' /tmp/anchore_ci_tools.py
             chmod +x /tmp/anchore_ci_tools.py
             ln -s /tmp/anchore_ci_tools.py /home/circleci/bin/anchore_ci_tools
 
