@@ -12,6 +12,7 @@ jobs:
           command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci -f .circleci/Dockerfile .
       - anchore/analyze_local_image:
           image_name: ${CIRCLE_PROJECT_REPONAME}:ci
+          policy_bundle_file_path: ""
 
   custom_policy_fail:
     executor: anchore/anchore_engine
@@ -55,6 +56,7 @@ workflows:
       - local_image_scan
       - anchore/image_scan:
           image_name: 'anchore/anchore-engine:latest'
+          policy_bundle_file_path: ""
       - anchore/image_scan:
           image_name: 'anchore/private_testing:anchore-ui-dev'
           private_registry: True

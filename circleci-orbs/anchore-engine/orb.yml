@@ -107,6 +107,10 @@ commands:
       Image is then scanned with anchore engine. Stores all reports as artifacts.
       Must be run on executor with docker-compose & sudo.
     parameters:
+      policy_bundle_file_path:
+        description: Specify file path to policy bundle.
+        type: string
+        default: "${CIRCLE_WORKING_DIRECTORY}/.circleci/.anchore/policy_bundle.json"
       policy_failure:
         description: Set to True if pipeline should stop on a failed policy evaluation.
         type: boolean
@@ -141,8 +145,9 @@ commands:
           image_name: anchore-registry:5000/<< parameters.image_name >>
           timeout: << parameters.timeout >>
       - policy_evaluation:
-          image_name: << parameters.image_name >>
+          image_name: anchore-registry:5000/<< parameters.image_name >>
           policy_failure: << parameters.policy_failure >>
+          policy_bundle_file_path: << parameters.policy_bundle_file_path >>
       - parse_reports
       - store_artifacts:
           path: anchore-reports
@@ -203,15 +208,19 @@ commands:
         description: Set to True if pipeline should stop on a failed policy evaluation.
         type: boolean
         default: False
+      policy_bundle_file_path:
+        description: Specify file path to policy bundle.
+        type: string
+        default: "${CIRCLE_WORKING_DIRECTORY}/.circleci/.anchore/policy_bundle.json"
     steps:
       - run:
           name: Evaluate image against desired policy bundle.
           command: |
-            (anchore-cli --json policy add ${CIRCLE_WORKING_DIRECTORY}/.circleci/.anchore/policy_bundle.json | jq '.policyId' | xargs anchore-cli policy activate) &> /dev/null || printf "\n%s\n" "No custom policy bundle found at ${CIRCLE_WORKING_DIRECTORY}/.circleci/.anchore/policy_bundle.json - using default policy bundle"
-            if [ << parameters.policy_failure >> ]; then
-              anchore-cli evaluate check << parameters.image_name >>
+            (anchore-cli --json policy add << parameters.policy_bundle_file_path >> | jq '.policyId' | xargs anchore-cli policy activate) || printf "\n%s\n" "No custom policy bundle found at << parameters.policy_bundle_file_path >> - using default policy bundle"
+            if << parameters.policy_failure >>; then
+              anchore-cli evaluate check << parameters.image_name >> --detail
             else
-              (set +o pipefail; anchore-cli evaluate check << parameters.image_name >> | tee /dev/null)
+              (set +o pipefail; anchore-cli evaluate check << parameters.image_name >> --detail | tee /dev/null)
             fi
 
   setup_anchore_engine:
@@ -349,6 +358,10 @@ jobs:
       Requires registry credentials to access private images, use ENV vars
       $DOCKER_USER & $DOCKER_PASS
     parameters:
+      policy_bundle_file_path:
+        description: Specify file path to policy bundle.
+        type: string
+        default: "${CIRCLE_WORKING_DIRECTORY}/.circleci/.anchore/policy_bundle.json"
       policy_failure:
         description: Set to True if pipeline should stop on a failed policy evaluation.
         type: boolean
@@ -377,6 +390,7 @@ jobs:
         type: string
         default: "300"
     steps:
+      - checkout
       - install_tools
       - setup_anchore_engine
       - when:
@@ -392,6 +406,7 @@ jobs:
       - policy_evaluation:
           image_name: << parameters.image_name >>
           policy_failure: << parameters.policy_failure >>
+          policy_bundle_file_path: << parameters.policy_bundle_file_path >>
       - parse_reports
       - store_artifacts:
           path: anchore-reports

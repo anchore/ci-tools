@@ -64,3 +64,22 @@ jobs:
           image_name: ${CIRCLE_PROJECT_REPONAME}:ci
           timeout: '500'
 ```
+
+Put a custom policy bundle in to your repo at .circleci/.anchore/policy_bundle.json
+Job will be marked a 'failed' if the Anchore policy evaluation fails
+```
+version: 2.1
+orbs:
+  anchore-engine: anchore/anchore-engine@1.0.1
+jobs:
+  local_image_scan:
+    executor: anchore/anchore_engine
+    steps:
+      - checkout
+      - run:
+          name: build container
+          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci .
+      - anchore/analyze_local_image:
+          image_name: ${CIRCLE_PROJECT_REPONAME}:ci
+          timeout: '500'
+          policy_failure: True
