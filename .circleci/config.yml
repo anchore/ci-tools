@@ -13,6 +13,7 @@ jobs:
       - anchore/analyze_local_image:
           image_name: ${CIRCLE_PROJECT_REPONAME}:ci
           policy_bundle_file_path: ""
+      - anchore/parse_reports
 
   custom_policy_fail:
     executor: anchore/anchore_engine
@@ -24,6 +25,7 @@ jobs:
       - anchore/analyze_local_image:
           image_name: ${CIRCLE_PROJECT_REPONAME}:policy_fail
           policy_failure: True
+      - anchore/parse_reports
 
   custom_policy_pass:
     executor: anchore/anchore_engine
@@ -35,6 +37,7 @@ jobs:
       - anchore/analyze_local_image:
           image_name: ${CIRCLE_PROJECT_REPONAME}:policy_pass
           policy_failure: True
+      - anchore/parse_reports
 
   publish_dev_orb:
     docker:
