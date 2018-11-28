@@ -3,28 +3,33 @@ description: |
   Anchore Engine is a docker container static analysis and policy-based compliance tool that
   automates the inspection, analysis, and evaluation of images to allow high confidence in
   container deployments by ensuring workload content meets the required criteria.
-  The source code for this orb can be found at https://github.com/anchore/ci-tools
+  Orb source code - https://github.com/anchore/ci-tools/blob/master/circleci-orbs/anchore-engine/orb.yml
 
 examples:
   standard_image_scan:
-    description: Use this job to scan an image located in a public registry.
+    description: |
+      Use this job to scan an image located in a public registry. If policy evaluation fails
+      the job will be marked as a failure. A custom policy can be used for evaluation,
+      add custom Anchore policy bundle to .circleci/.anchore/policy_bundle.json
     usage:
       version: 2.1
       orbs:
-        anchore-engine: anchore/anchore-engine@1.0.1
+        anchore-engine: anchore/anchore-engine@1.1.0
       workflows:
         scan_image:
           jobs:
             - anchore/image_scan:
                 image_name: docker.io/anchore/anchore-engine:latest
-                timeout: '300'
+                policy_failure: True
 
   private_image_scan:
-    description: Use this job to scan an image located in a private registry.
+    description: |
+      Use this job to scan an image located in a private registry. A custom policy can be used for evaluation,
+      add custom Anchore policy bundle to .circleci/.anchore/policy_bundle.json
     usage:
       version: 2.1
       orbs:
-        anchore-engine: anchore/anchore-engine@1.0.1
+        anchore-engine: anchore/anchore-engine@1.1.0
       workflows:
         scan_image:
           jobs:
@@ -38,12 +43,13 @@ examples:
 
   local_image_scan:
     description: |
-      Use this command within a container build pipeline, it can be used to
-      scan an image that hasn't been pushed to a registry yet.
+      Use this command within a container build pipeline, it can be used to scan an image that hasn't
+      been pushed to a registry yet. A custom policy can be used for evaluation, add custom Anchore policy
+      bundle to .circleci/.anchore/policy_bundle.json
     usage:
       version: 2.1
       orbs:
-        anchore-engine: anchore/anchore-engine@1.0.1
+        anchore-engine: anchore/anchore-engine@1.1.0
       jobs:
         local_image_scan:
           executor: anchore/anchore_engine
@@ -101,8 +107,8 @@ commands:
       Image is then scanned with anchore engine. Stores all reports as artifacts.
       Must be run on executor with docker-compose & sudo.
     parameters:
-      analysis_fail:
-        description: Set to True if pipeline should stop on a failed image analysis.
+      policy_failure:
+        description: Set to True if pipeline should stop on a failed policy evaluation.
         type: boolean
         default: False
       image_name:
@@ -134,12 +140,9 @@ commands:
       - analyze_image:
           image_name: anchore-registry:5000/<< parameters.image_name >>
           timeout: << parameters.timeout >>
-      - when:
-          condition: << parameters.analysis_fail >>
-          steps:
-            - run:
-                name: Check status of image analysis.
-                command: anchore-cli evaluate check << parameters.image_name >>
+      - policy_evaluation:
+          image_name: << parameters.image_name >>
+          policy_failure: << parameters.policy_failure >>
       - parse_reports
       - store_artifacts:
           path: anchore-reports
@@ -187,6 +190,29 @@ commands:
             jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/image-content-os-report.json || true
             printf "\n%s\n" "The following vulnerabilites were found:"
             jq '[.vulnerabilities | group_by(.package) | .[] | {package: .[0].package, vuln: [.[].vuln]}]' anchore-reports/image-vuln-report.json || true
+
+  policy_evaluation:
+    description: |
+      Perform policy evaluation using Anchore Engine image analysis. A customized policy bundle can be utilized for evaluation.
+      Custom policy bundles should be added to your repo at .circleci/.anchore/policy_bundle.json
+    parameters:
+      image_name:
+        description: Name of the image to be evaluated
+        type: string
+      policy_failure:
+        description: Set to True if pipeline should stop on a failed policy evaluation.
+        type: boolean
+        default: False
+    steps:
+      - run:
+          name: Evaluate image against desired policy bundle.
+          command: |
+            (anchore-cli --json policy add ${CIRCLE_WORKING_DIRECTORY}/.circleci/.anchore/policy_bundle.json | jq '.policyId' | xargs anchore-cli policy activate) &> /dev/null || printf "\n%s\n" "No custom policy bundle found at ${CIRCLE_WORKING_DIRECTORY}/.circleci/.anchore/policy_bundle.json - using default policy bundle"
+            if [ << parameters.policy_failure >> ]; then
+              anchore-cli evaluate check << parameters.image_name >>
+            else
+              (set +o pipefail; anchore-cli evaluate check << parameters.image_name >> | tee /dev/null)
+            fi
 
   setup_anchore_engine:
     description: |
@@ -323,6 +349,10 @@ jobs:
       Requires registry credentials to access private images, use ENV vars
       $DOCKER_USER & $DOCKER_PASS
     parameters:
+      policy_failure:
+        description: Set to True if pipeline should stop on a failed policy evaluation.
+        type: boolean
+        default: False
       image_name:
         description: Image repository & tag (eg - "docker.io/anchore/anchore-engine:latest").
         type: string
@@ -359,6 +389,9 @@ jobs:
       - analyze_image:
           image_name: << parameters.image_name >>
           timeout: << parameters.timeout >>
+      - policy_evaluation:
+          image_name: << parameters.image_name >>
+          policy_failure: << parameters.policy_failure >>
       - parse_reports
       - store_artifacts:
           path: anchore-reports
