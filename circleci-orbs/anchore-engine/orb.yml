@@ -3,29 +3,15 @@ description: |
   Anchore Engine is a docker container static analysis and policy-based compliance tool that
   automates the inspection, analysis, and evaluation of images to allow high confidence in
   container deployments by ensuring workload content meets the required criteria.
+  Anchore Engine Project - https://github.com/anchore/anchore-engine
   Orb source code - https://github.com/anchore/ci-tools/blob/master/circleci-orbs/anchore-engine/orb.yml
 
 examples:
   standard_image_scan:
     description: |
-      Use this job to scan an image located in a public registry. If policy evaluation fails
-      the job will be marked as a failure. A custom policy can be used for evaluation,
-      add custom Anchore policy bundle to .circleci/.anchore/policy_bundle.json
-    usage:
-      version: 2.1
-      orbs:
-        anchore-engine: anchore/anchore-engine@1.1.0
-      workflows:
-        scan_image:
-          jobs:
-            - anchore/image_scan:
-                image_name: docker.io/anchore/anchore-engine:latest
-                policy_failure: True
-
-  private_image_scan:
-    description: |
-      Use this job to scan an image located in a private registry. A custom policy can be used for evaluation,
-      add custom Anchore policy bundle to .circleci/.anchore/policy_bundle.json
+      Use this job to scan an image located in a public registry. A custom
+      policy can be used for evaluation, add custom Anchore policy bundle to
+      .circleci/.anchore/policy_bundle.json in your repo.
     usage:
       version: 2.1
       orbs:
@@ -36,6 +22,21 @@ examples:
             - anchore/image_scan:
                 image_name: docker.io/anchore/anchore-engine:latest
                 timeout: '300'
+
+  private_image_scan:
+    description: |
+      Use this job to scan an image located in a private registry. A custom
+      policy can be used for evaluation, add custom Anchore policy bundle to
+      .circleci/.anchore/policy_bundle.json in your repo.
+    usage:
+      version: 2.1
+      orbs:
+        anchore-engine: anchore/anchore-engine@1.1.0
+      workflows:
+        scan_image:
+          jobs:
+            - anchore/image_scan:
+                image_name: docker.io/anchore/anchore-engine:latest
                 private_registry: True
                 registry_name: docker.io
                 registry_user: "${DOCKER_USER}"
@@ -43,9 +44,11 @@ examples:
 
   local_image_scan:
     description: |
-      Use this command within a container build pipeline, it can be used to scan an image that hasn't
-      been pushed to a registry yet. A custom policy can be used for evaluation, add custom Anchore policy
-      bundle to .circleci/.anchore/policy_bundle.json
+      Use the analyze_local_image command within a container build pipeline,
+      it can be used to scan an image that hasn'tbeen pushed to a registry yet.
+      If Anchore policy evaluation gives 'fail' status, the CI job will be marked
+      as a failure. A custom policy can be used for evaluation, add custom Anchore
+      policy bundle to .circleci/.anchore/policy_bundle.json in your repo.
     usage:
       version: 2.1
       orbs:
@@ -61,6 +64,7 @@ examples:
             - anchore/analyze_local_image:
                 image_name: ${CIRCLE_PROJECT_REPONAME}:ci
                 timeout: '500'
+                policy_failure: True
             - anchore/parse_reports
 
 executors:
@@ -160,7 +164,7 @@ commands:
       Must run on executor with anchore_ci_tools.py & anchorecli installed.
     parameters:
       image_name:
-        description: Image repository & tag (eg - "anchore/anchore-engine:latest").
+        description: Image repository & tag (eg - "docker.io/anchore/anchore-engine:latest").
         type: string
       timeout:
         description: Timeout used for Anchore Engine image scanning.
@@ -204,7 +208,7 @@ commands:
       bundles, or if using executor other than anchore/anchore_engine a custom policy bundle path can be set as a parameter.
     parameters:
       image_name:
-        description: Name of the image to be evaluated
+        description: Image repository & tag (eg - "docker.io/anchore/anchore-engine:latest").
         type: string
       policy_failure:
         description: Set to True if pipeline should stop on policy evaluation status 'fail'.
@@ -218,7 +222,8 @@ commands:
       - run:
           name: Evaluate image against desired policy bundle.
           command: |
-            (anchore-cli --json policy add << parameters.policy_bundle_file_path >> | jq '.policyId' | xargs anchore-cli policy activate) &> /dev/null || printf "\n%s\n" "No custom policy bundle found at << parameters.policy_bundle_file_path >> - using default policy bundle"
+            (anchore-cli --json policy add << parameters.policy_bundle_file_path >> | jq '.policyId' | xargs anchore-cli policy activate) &> /dev/null || \
+              printf "\n%s\n" "Custom policy bundle not found - << parameters.policy_bundle_file_path >> - using default policy bundle."
             if << parameters.policy_failure >>; then
               anchore-cli evaluate check << parameters.image_name >> --detail
             else
@@ -239,7 +244,7 @@ commands:
           name: Create anchore engine configuration files.
           command: |
             mkdir config db
-            cat \<< EOF \>> config/config.yaml
+            cat \<< EOF > config/config.yaml
             # Anchore Service Configuration File
             log_level: 'INFO'
             cleanup_images: True
@@ -314,12 +319,12 @@ commands:
                   feed_sync_checker: 3600
             EOF
 
-            cat \<< EOF \>> docker-compose.yaml
+            cat \<< EOF > docker-compose.yaml
             # Anchore engine docker-compose configuration.
             version: '2'
             services:
               anchore-engine:
-                image: docker.io/anchore/anchore-engine:v0.3.0
+                image: "docker.io/anchore/anchore-engine:v0.3.0"
                 depends_on:
                  - anchore-db
                 ports:
@@ -332,7 +337,7 @@ commands:
                  options:
                   max-size: 100m
               anchore-db:
-                image: "anchore/engine-db-preload:v0.3.0"
+                image: "docker.io/anchore/engine-db-preload:v0.3.0"
                 volumes:
                  - ./db:/var/lib/postgresql/data/pgdata/:z
                 environment:
@@ -356,9 +361,10 @@ jobs:
     executor: anchore_engine
     description: |
       Performs a static security analysis of docker container with anchore engine.
-      Anchore engine pulls image from public/private docker registries.
-      Requires registry credentials to access private images, use ENV vars
-      $DOCKER_USER & $DOCKER_PASS
+      A custom policy can be used for evaluation, add custom Anchore policy bundle
+      to .circleci/.anchore/policy_bundle.json in your repo. Anchore engine pulls
+      image from public/private docker registries. Requires registry credentials
+      to access private images, use ENV vars $DOCKER_USER & $DOCKER_PASS
     parameters:
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
@@ -376,15 +382,15 @@ jobs:
         type: boolean
         default: False
       registry_name:
-        description: Name of private registry (eg - docker.io)
+        description: Name of private registry (eg - "docker.io")
         type: string
         default: "docker.io"
       registry_user:
-        description: Username for private registry (use env var to populate).
+        description: Username for private registry (use env var $DOCKER_USER to populate).
         type: string
         default: "${DOCKER_USER}"
       registry_pass:
-        description: Password for private registry (use env var to populate).
+        description: Password for private registry (use env var $DOCKER_PASS to populate).
         type: string
         default: "${DOCKER_PASS}"
       timeout:

@@ -4,8 +4,9 @@
   * Currently only supports docker based CI/CD tools. Scripts are intended to run directly on the anchore/anchore-engine container.
 
 ## CircleCi Orbs
+All orbs are tested in .circleci/config.yaml of this repo.
 
-All finished orbs will be published to the public CircleCi orb repository.
+Finished orbs will be published to the public CircleCi orb repository.
 
 Publish to dev first (before pushing changes to repo):
   * circleci orb publish orb.yml anchore/anchore-engine@dev:latest
@@ -67,7 +68,7 @@ jobs:
 ```
 
 Put a custom policy bundle in to your repo at .circleci/.anchore/policy_bundle.json
-Job will be marked a 'failed' if the Anchore policy evaluation fails
+Job will be marked as 'failed' if the Anchore policy evaluation gives 'fail' status
 ```
 version: 2.1
 orbs:
