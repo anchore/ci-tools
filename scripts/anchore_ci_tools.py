@@ -12,7 +12,7 @@ global ALL_CONTENT_TYPES
 global ALL_REPORT_COMMANDS
 global ALL_VULN_TYPES
 
-ALL_CONTENT_TYPES = ['os', 'python', 'java']
+ALL_CONTENT_TYPES = ['os', 'python', 'java', 'gem', 'npm']
 ALL_REPORT_COMMANDS = {
     'content': 'anchore-cli --json image content',
     'vuln': 'anchore-cli --json image vuln',
