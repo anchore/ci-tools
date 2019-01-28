@@ -17,13 +17,13 @@ Publish to production:
   * circleci orb publish orb.yml anchore/anchore-engine@<sem_ver>
 
 
-### Examples for using the anchore/anchore-engine@1.0.0 CircleCi orb:
+### Examples for using the anchore/anchore-engine@1.1.0 CircleCi orb:
 
 Adding a public image scan job to a CircleCi workflow:
 ```
 version: 2.1
 orbs:
-  anchore-engine: anchore/anchore-engine@1.1.0
+  anchore: anchore/anchore-engine@1.1.0
 workflows:
   scan_image:
     jobs:
@@ -36,7 +36,7 @@ Adding a private image scan job to a CircleCi workflow:
 ```
 version: 2.1
 orbs:
-  anchore-engine: anchore/anchore-engine@1.1.0
+  anchore: anchore/anchore-engine@1.1.0
 workflows:
   scan_image:
     jobs:
@@ -52,15 +52,17 @@ Adding image scanning to your container build pipeline job.
 ```
 version: 2.1
 orbs:
-  anchore-engine: anchore/anchore-engine@1.1.0
+  anchore: anchore/anchore-engine@1.1.0
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
+    working_directory: ~/project
     steps:
-      - checkout
+      - checkout:
+          path: ~/project/${CIRCLE_PROJECT_REPONAME}
       - run:
           name: build container
-          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci .
+          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci "~/project/${CIRCLE_PROJECT_REPONAME}"
       - anchore/analyze_local_image:
           image_name: ${CIRCLE_PROJECT_REPONAME}:ci
           timeout: '500'
@@ -72,7 +74,7 @@ Job will be marked as 'failed' if the Anchore policy evaluation gives 'fail' sta
 ```
 version: 2.1
 orbs:
-  anchore-engine: anchore/anchore-engine@1.1.0
+  anchore: anchore/anchore-engine@1.1.0
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
