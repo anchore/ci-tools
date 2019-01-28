@@ -15,7 +15,7 @@ examples:
     usage:
       version: 2.1
       orbs:
-        anchore-engine: anchore/anchore-engine@1.1.0
+        anchore: anchore/anchore-engine@1.1.0
       workflows:
         scan_image:
           jobs:
@@ -31,7 +31,7 @@ examples:
     usage:
       version: 2.1
       orbs:
-        anchore-engine: anchore/anchore-engine@1.1.0
+        anchore: anchore/anchore-engine@1.1.0
       workflows:
         scan_image:
           jobs:
@@ -52,7 +52,7 @@ examples:
     usage:
       version: 2.1
       orbs:
-        anchore-engine: anchore/anchore-engine@1.1.0
+        anchore: anchore/anchore-engine@1.1.0
       jobs:
         local_image_scan:
           executor: anchore/anchore_engine
