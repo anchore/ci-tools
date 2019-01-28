@@ -80,9 +80,10 @@ jobs:
     executor: anchore/anchore_engine
     steps:
       - checkout
+          path: ~/project/${CIRCLE_PROJECT_REPONAME}
       - run:
           name: build container
-          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci .
+          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci "~/project/${CIRCLE_PROJECT_REPONAME}"
       - anchore/analyze_local_image:
           image_name: ${CIRCLE_PROJECT_REPONAME}:ci
           timeout: '500'
