@@ -79,7 +79,7 @@ jobs:
   local_image_scan:
     executor: anchore/anchore_engine
     steps:
-      - checkout
+      - checkout:
           path: ~/project/${CIRCLE_PROJECT_REPONAME}
       - run:
           name: build container
