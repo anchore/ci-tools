@@ -28,19 +28,17 @@ def add_image(image_name):
 
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-        output = output.decode('utf-8')
-    except Exception as error:
+    except subprocess.CalledProcessError as error:
         output = error.output
-        output = output.decode('utf-8')
-        raise Exception ("Failed to add image to anchore engine. Error: {}".format(output))
+        raise Exception ("Failed to add image to anchore engine. Error: {}".format(output.decode('utf-8')))
 
-    img_details = json.loads(output)
+    img_details = json.loads(output.decode('utf-8'))
     img_digest = img_details[0]['imageDigest']
 
     return img_digest
 
 
-def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln_type='all', report_directory="anchore-reports"):
+def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln_type='all', report_directory='anchore-reports'):
     if 'all' in content_type:
         content_type = ALL_CONTENT_TYPES
 
@@ -153,16 +151,16 @@ def is_service_available(url, user='admin', pw='foobar'):
         else:
             status = "not_ready"
             return False, status
-    except Exception as err:
+    except Exception:
         status = "not_ready"
         return False, status
 
 
 def print_status_message(last_status, status):
     if not status == last_status:
-        print ('\n\tStatus: {}'.format(status), end='', flush=True)
+        print ("\n\tStatus: {}".format(status), end='', flush=True)
     else:
-        print ('.', end='', flush=True)
+        print (".", end='', flush=True)
 
     return True
 
@@ -174,16 +172,16 @@ def setup_parser():
     report_type_choices.append('all')
     vuln_type_choices = ALL_VULN_TYPES
 
-    parser = argparse.ArgumentParser(description='A tool that automates various anchore engine functions for CI pipelines. Intended to be run directly on the anchore/anchore-engine container.')
-    parser.add_argument('-a', '--analyze', action='store_true', help='Specify if you want image to be analyzed by anchore engine.')
-    parser.add_argument('-r', '--report', action='store_true', help='Generate reports on analyzed image.')
-    parser.add_argument('-s', '--setup', action='store_true', help='Sets up & starts anchore engine on running container.')
-    parser.add_argument('-w','--wait', action='store_true', help='Wait for anchore engine to start up.')
-    parser.add_argument('--image', help='Specify the image name. REQUIRED for analyze and report options.')
-    parser.add_argument('--timeout', default=300, type=int, help='Set custom timeout (in seconds) for image analysis and/or engine setup.')
-    parser.add_argument('--content', nargs='+', choices=content_type_choices, default='all', help='Specify what content reports to generate. Can pass multiple options. Ignored if --type content not specified. Available options are: [{}]'.format(', '.join(content_type_choices)), metavar='')
-    parser.add_argument('--type', nargs='+', choices=report_type_choices, default='all', help='Specify what report types to generate. Can pass multiple options. Available options are: [{}]'.format(', '.join(report_type_choices)), metavar='')
-    parser.add_argument('--vuln', choices=vuln_type_choices, default='all', help='Specify what vulnerability reports to generate. Available options are: [{}] '.format(', '.join(vuln_type_choices)), metavar='')
+    parser = argparse.ArgumentParser(description="A tool that automates various anchore engine functions for CI pipelines. Intended to be run directly on the anchore/anchore-engine container.")
+    parser.add_argument('-a', '--analyze', action='store_true', help="Specify if you want image to be analyzed by anchore engine.")
+    parser.add_argument('-r', '--report', action='store_true', help="Generate reports on analyzed image.")
+    parser.add_argument('-s', '--setup', action='store_true', help="Sets up & starts anchore engine on running container.")
+    parser.add_argument('-w','--wait', action='store_true', help="Wait for anchore engine to start up.")
+    parser.add_argument('--image', help="Specify the image name. REQUIRED for analyze and report options.")
+    parser.add_argument('--timeout', default=300, type=int, help="Set custom timeout (in seconds) for image analysis and/or engine setup.")
+    parser.add_argument('--content', nargs='+', choices=content_type_choices, default='all', help="Specify what content reports to generate. Can pass multiple options. Ignored if --type content not specified. Available options are: [{}]".format(', '.join(content_type_choices)), metavar='')
+    parser.add_argument('--type', nargs='+', choices=report_type_choices, default='all', help="Specify what report types to generate. Can pass multiple options. Available options are: [{}]".format(', '.join(report_type_choices)), metavar='')
+    parser.add_argument('--vuln', choices=vuln_type_choices, default='all', help="Specify what vulnerability reports to generate. Available options are: [{}] ".format(', '.join(vuln_type_choices)), metavar='')
 
     return parser
 
@@ -192,10 +190,9 @@ def start_anchore_engine():
     if not is_engine_running():
         cmd = 'anchore-manager service start --all'.split()
         print ("Starting anchore engine...", flush=True)
-        log_file = open('anchore-engine.log', 'w')
-
         try:
-            subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
+            with open('anchore-engine.log', 'w') as out:
+                subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT)
         except Exception as error:
             raise Exception ("Unable to start anchore engine. Exception: {}".format(error))
 
@@ -226,7 +223,7 @@ def wait_engine_available(health_check_urls=[], timeout=300, user='admin', pw='f
 
 
 def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
-    print ('Waiting for analysis to complete...', flush=True)
+    print ("Waiting for analysis to complete...", flush=True)
     last_img_status = str()
     is_analyzed = False
     start_ts = time.time()
@@ -249,21 +246,20 @@ def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
 def write_log_from_output(command, file_name, ignore_exit_code=False):
     try:
         output = subprocess.check_output(command)
-        output = output.decode('utf-8')
         with open(file_name, 'w') as file:
-            file.write(output)
+            file.write(output.decode('utf-8'))
 
-    except Exception as error:
+    except subprocess.CalledProcessError as error:
         output = error.output
         output = output.decode('utf-8')
         if not ignore_exit_code:
-            print ('Failed to generate {}. Exception: {} \n {}'.format(file_name, error, output), flush=True)
+            print ("Failed to generate {}. Exception: {} \n {}".format(file_name, error, output), flush=True)
             return False
         else:
             with open(file_name, 'w') as file:
                 file.write(output)
 
-    print ('Successfully generated {}.'.format(file_name), flush=True)
+    print ("Successfully generated {}.".format(file_name), flush=True)
 
     return True
 
@@ -305,11 +301,11 @@ def main(arg_parser):
         raise Exception ("\n\nERROR - Must specify an action to perform on image. Plase include --report or --analyze")
 
     anchore_env_vars = {
-        "ANCHORE_HOST_ID" : "localhost",
-        "ANCHORE_ENDPOINT_HOSTNAME" : "localhost",
-        "ANCHORE_CLI_USER" : "admin",
-        "ANCHORE_CLI_PASS" : "foobar",
-        "ANCHORE_CLI_SSL_VERIFY" : "n"
+        'ANCHORE_HOST_ID' : 'localhost',
+        'ANCHORE_ENDPOINT_HOSTNAME' : 'localhost',
+        'ANCHORE_CLI_USER' : 'admin',
+        'ANCHORE_CLI_PASS' : 'foobar',
+        'ANCHORE_CLI_SSL_VERIFY' : 'n'
     }
 
     # set default anchore cli environment variables if they aren't already set
@@ -317,8 +313,8 @@ def main(arg_parser):
         if var not in os.environ:
             os.environ[var] = anchore_env_vars[var]
 
-    anchore_user = os.environ["ANCHORE_CLI_USER"]
-    anchore_pw = os.environ["ANCHORE_CLI_PASS"]
+    anchore_user = os.environ['ANCHORE_CLI_USER']
+    anchore_pw = os.environ['ANCHORE_CLI_PASS']
 
     if wait_engine:
         wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout, user=anchore_user, pw=anchore_pw)
@@ -338,7 +334,7 @@ def main(arg_parser):
 
     else:
         parser.print_help()
-        raise Exception ('\n\nError processing command arguments for {}.'.format(sys.argv[0]))
+        raise Exception ("\n\nError processing command arguments for {}.".format(sys.argv[0]))
 
 
 if __name__ == '__main__':
@@ -347,5 +343,5 @@ if __name__ == '__main__':
         main(arg_parser)
 
     except Exception as error:
-        print ('\n\nERROR executing script - Exception: {}'.format(error))
+        print ("\n\nERROR executing script - Exception: {}".format(error))
         sys.exit(1)

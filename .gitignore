@@ -3,3 +3,5 @@ logs/
 *.log
 *.DS_Store
 *.pyc
+.python-version
+.vscode/
