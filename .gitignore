@@ -5,3 +5,4 @@ logs/
 *.pyc
 .python-version
 .vscode/
+test/
