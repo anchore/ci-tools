@@ -7,6 +7,7 @@ import requests
 import subprocess
 import sys
 import time
+import re
 
 global ALL_CONTENT_TYPES
 global ALL_REPORT_COMMANDS
@@ -38,7 +39,8 @@ def add_image(image_name):
     return img_digest
 
 
-def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln_type='all', report_directory='anchore-reports'):
+def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln_type='all', report_directory="anchore-reports"):
+    image_basename = re.match(r'(?:.+/)?([^:]+)(?::.+)?', image_name).group(1)
     if 'all' in content_type:
         content_type = ALL_CONTENT_TYPES
 
@@ -68,22 +70,22 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
     for report in active_report_cmds.keys():
         if report == 'content':
             for type in content_type:
-                file_name = '{}/image-{}-{}-report.json'.format(report_dir, report, type)
+                file_name = '{}/{}-{}-{}-report.json'.format(report_dir, image_basename, report, type)
                 cmd = '{} {} {}'.format(ALL_REPORT_COMMANDS[report], image_name, type).split()
                 write_log_from_output(cmd, file_name)
 
         elif report == 'policy':
-            file_name = '{}/image-{}-report.json'.format(report_dir, report)
+            file_name = '{}/{}-{}-report.json'.format(report_dir, image_basename, report)
             cmd = '{} {} --detail'.format(ALL_REPORT_COMMANDS[report], image_name).split()
             write_log_from_output(cmd, file_name, ignore_exit_code=True)
 
         elif report == 'vuln':
-            file_name = '{}/image-{}-report.json'.format(report_dir, report)
+            file_name = '{}/{}-{}-report.json'.format(report_dir, image_basename, report)
             cmd = '{} {} {}'.format(ALL_REPORT_COMMANDS[report], image_name, vuln_type).split()
             write_log_from_output(cmd, file_name)
 
         else:
-            file_name = '{}/image-{}-report.json'.format(report_dir, report)
+            file_name = '{}/{}-{}-report.json'.format(report_dir, image_basename, report)
             cmd = '{} {}'.format(ALL_REPORT_COMMANDS[report], image_name).split()
             write_log_from_output(cmd, file_name)
 
@@ -236,7 +238,7 @@ def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
         if is_analyzed:
             break
         last_img_status = img_status
-        time.sleep(10)
+        time.sleep(5)
 
     print ("\n\nAnalysis completed!\n", flush=True)
 
@@ -330,7 +332,6 @@ def main(arg_parser):
             wait_image_analyzed(img_digest, timeout, user=anchore_user, pw=anchore_pw)
         if generate_report:
             generate_reports(image_name, content_type, report_type, vuln_type)
-            print ("\n")
 
     else:
         parser.print_help()
