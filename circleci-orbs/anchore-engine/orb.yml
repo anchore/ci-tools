@@ -185,18 +185,15 @@ commands:
       - run:
           name: Install anchore tools
           command: |
-            # TODO Update script to pull from version tag
-            curl -o /tmp/anchore_ci_tools.py https://raw.githubusercontent.com/anchore/ci-tools/orb_version_update/scripts/anchore_ci_tools.py
+            curl -o /tmp/anchore_ci_tools.py https://raw.githubusercontent.com/anchore/ci-tools/v0.3.2/scripts/anchore_ci_tools.py
             chmod +x /tmp/anchore_ci_tools.py
-            if [ -d "/home/circleci" ]; then
-              pyenv global 3.6.5
-              pip install --upgrade pip
-              pip install --upgrade anchorecli
-              sed -i 's|/usr/bin/python3|/opt/circleci/.pyenv/shims/python3|' /tmp/anchore_ci_tools.py
-              ln -s /tmp/anchore_ci_tools.py /home/circleci/bin/anchore_ci_tools
-            else
-              ln -s /tmp/anchore_ci_tools.py /usr/local/bin/anchore_ci_tools
-            fi
+            pyenv global 3.6.5
+            pip install --upgrade pip
+            pip install --upgrade docker-compose
+            pip install --upgrade anchorecli
+            sed -i 's|/usr/bin/python3|/opt/circleci/.pyenv/shims/python3|' /tmp/anchore_ci_tools.py
+            ln -s /tmp/anchore_ci_tools.py /home/circleci/bin/anchore_ci_tools
+
 
   parse_reports:
     description: Prints analysis report of package vulnerabilites using JQ.
@@ -359,7 +356,6 @@ commands:
       - run:
           name: Start anchore engine.
           command: |
-            pip install --upgrade docker-compose
             docker-compose up -d
             anchore-cli system wait --interval 10
 

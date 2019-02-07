@@ -23,7 +23,7 @@ Adding a public image scan job to a CircleCi workflow:
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.1.0
+  anchore: anchore/anchore-engine@1.2.0
 workflows:
   scan_image:
     jobs:
@@ -36,7 +36,7 @@ Adding a private image scan job to a CircleCi workflow:
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.1.0
+  anchore: anchore/anchore-engine@1.2.0
 workflows:
   scan_image:
     jobs:
@@ -52,17 +52,17 @@ Adding image scanning to your container build pipeline job.
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.1.0
+  anchore: anchore/anchore-engine@1.2.0
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
     working_directory: ~/project
     steps:
       - checkout:
-          path: ~/project/${CIRCLE_PROJECT_REPONAME}
+          path: ~/project/src/
       - run:
           name: build container
-          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci "~/project/${CIRCLE_PROJECT_REPONAME}"
+          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci ~/project/src
       - anchore/analyze_local_image:
           image_name: ${CIRCLE_PROJECT_REPONAME}:ci
           timeout: '500'
@@ -74,16 +74,16 @@ Job will be marked as 'failed' if the Anchore policy evaluation gives 'fail' sta
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.1.0
+  anchore: anchore/anchore-engine@1.2.0
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
     steps:
       - checkout:
-          path: ~/project/${CIRCLE_PROJECT_REPONAME}
+          path: ~/project/src/
       - run:
           name: build container
-          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci "~/project/${CIRCLE_PROJECT_REPONAME}"
+          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci ~/project/src/
       - anchore/analyze_local_image:
           image_name: ${CIRCLE_PROJECT_REPONAME}:ci
           timeout: '500'
