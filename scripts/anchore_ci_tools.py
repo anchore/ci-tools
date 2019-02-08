@@ -24,7 +24,7 @@ ALL_VULN_TYPES = ['all', 'non-os', 'os']
 
 
 def add_image(image_name):
-    print ("Adding {} to anchore engine for scanning.".format(image_name), flush=True)
+    print ("\nAdding {} to anchore engine for scanning.".format(image_name), flush=True)
     cmd = 'anchore-cli --json image add {}'.format(image_name).split()
 
     try:

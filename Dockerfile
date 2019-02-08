@@ -1,4 +1,4 @@
-FROM btodhunter/anchore-engine:latest
+FROM anchore/anchore-engine:dev
 
 RUN apt-get update; \
     apt-get upgrade; \
@@ -47,12 +47,10 @@ RUN set -eux; \
 
 COPY conf/stateless_ci_config.yaml /config/config.yaml
 COPY scripts/anchore_ci_tools.py /usr/local/bin/
-COPY docker-entrypoint.sh /usr/local/bin/
+COPY docker-entrypoint.sh /
 
-ENV ANCHORE_CLI_URL="http://anchore-engine:8228/v1" \
-    ANCHORE_HOST_ID="anchore-engine" \
-    ANCHORE_ENDPOINT_HOSTNAME="anchore-engine"
+ENV ANCHORE_ENDPOINT_HOSTNAME="anchore-engine"
 
 VOLUME ["/var/lib/registry"]
 EXPOSE 5432 5000
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/docker-entrypoint.sh"]

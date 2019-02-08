@@ -1,4 +1,6 @@
-#!/bin/bash -e
+#!/bin/bash
+
+set -e -o pipefail
 
 export POSTGRES_USER="${POSTGRES_USER:-postgres}"
 export POSTGRES_DB="${POSTGRES_DB:-postgres}"
@@ -7,10 +9,11 @@ export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-mysecretpassword}"
 export ANCHORE_DB_PASSWORD="$POSTGRES_PASSWORD"
 export ANCHORE_DB_USER="$POSTGRES_USER"
 export ANCHORE_DB_NAME="$POSTGRES_DB"
-export ANCHORE_DB_HOST="$ANCHORE_HOST_ID"
+export ANCHORE_DB_HOST="$ANCHORE_ENDPOINT_HOSTNAME"
+export ANCHORE_HOST_ID="$ANCHORE_ENDPOINT_HOSTNAME"
+export ANCHORE_CLI_URL="http://${ANCHORE_ENDPOINT_HOSTNAME}:8228/v1"
 
 export PATH=$PATH:/usr/lib/postgresql/9.6/bin/
-echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts
 
 init_db () {
     # look specifically for PG_VERSION, as it is expected in the DB dir. 
@@ -24,7 +27,7 @@ init_db () {
         else
             authMethod=trust
         fi
-            printf '\n%s' "host all all all $authMethod" >> "$PGDATA/pg_hba.conf"
+            printf '\n%s' "host all all all $authMethod" >> "${PGDATA}/pg_hba.conf"
 
         # internal start of server in order to allow set-up using psql-client
         # does not listen on external TCP/IP and waits until start finishes
@@ -67,17 +70,23 @@ init_db () {
 
         unset PGPASSWORD
 
-        printf '%s\n' 'PostgreSQL init process complete; ready for start up.'
+        printf '\n%s\n\n' 'PostgreSQL init process complete; ready for start up.'
     fi
 }
 
 start_services () {
+    echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts
+
+    printf '%s\n' "Starting postgresql..."
     touch /var/log/postgres.log && chown postgres:postgres /var/log/postgres.log
-    echo "Starting postgresql."
     nohup gosu postgres bash -c 'postgres &> /var/log/postgres.log &' &> /dev/null
-    echo "Starting docker registry."
+    sleep 3 && gosu postgres pg_isready -d postgres --quiet && echo "Postgresql started successfully!"
+    
+    printf '\n%s\n' "Starting docker registry..."
     nohup registry serve /etc/docker/registry/config.yml &> /var/log/registry.log &
-    echo "Starting anchore engine."
+    curl --silent --retry 3 --retry-connrefused "${ANCHORE_ENDPOINT_HOSTNAME}:5000" && echo "Docker registry started successfully!"
+    
+    printf '\n%s\n' "Starting anchore engine..."
     nohup anchore-manager service start --all &> /var/log/anchore.log &
 }
 
@@ -104,10 +113,10 @@ else
     init_db
     start_services
     anchore-cli system wait --feedsready "vulnerabilities,nvd"
-    printf '\n%s\n' "Searching for docker archive files in /anchore-engine."
+    printf '\n%s\n\n' "Searching for docker image archive files in /anchore-engine."
     find /anchore-engine -type f -exec bash -c 'if [[ $(skopeo inspect "docker-archive:${0}" 2> /dev/null) ]];then echo "$0" >> /tmp/scan_files.txt; else echo "Invalid docker archive: $0"; fi' {} \;
     for i in $(uniq /tmp/scan_files.txt); do
-        printf '\n%s\n' "Preparing archive for analysis: $i"
+        printf '\n%s\n\n' "Preparing docker image archive for analysis: $i"
         anchore_analysis $(basename "$i")
     done
 fi
