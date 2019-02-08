@@ -1,4 +1,4 @@
 .circleci
 .vscode
 .gitignore
-test/*
+test/

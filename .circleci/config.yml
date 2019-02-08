@@ -1,90 +1,120 @@
 version: 2.1
-
 orbs:
   anchore: anchore/anchore-engine@dev:latest
+commands:
+  pull_test_image:
+    description: pull image and save as docker archive
+    parameters:
+      image_names:
+        description: can pass a bash array
+        type: string
+    steps:
+    - run:
+        name: Pull & Save test images
+        command: |
+          mkdir -p ~/images
+          img_array=<< parameters.image_names >>
+          for i in "${img_array[@]}"; do
+            docker pull "$i"
+            img=$(echo "$i" | sed 's|/|-|g')
+            docker save "$i" -o ~/images/"${img%:*}".tar
+          done
+
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
     steps:
-      - checkout
-      - run:
-          name: build container
-          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci -f .circleci/Dockerfile .
-      - anchore/analyze_local_image:
-          image_name: ${CIRCLE_PROJECT_REPONAME}:ci
-          policy_bundle_file_path: ""
-      - anchore/parse_reports
+    - checkout
+    - run:
+        name: build container
+        command: docker build -t "${CIRCLE_PROJECT_REPONAME}:ci" -f .circleci/Dockerfile .
+    - anchore/analyze_local_image:
+        image_name: "${CIRCLE_PROJECT_REPONAME}:ci"
+        policy_bundle_file_path: ""
+    - anchore/parse_reports
 
   custom_policy_fail:
     executor: anchore/anchore_engine
     steps:
-      - checkout
-      - run:
-          name: build container
-          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:policy_fail -f .circleci/node_critical_fail/Dockerfile .circleci/node_critical_fail/
-      - anchore/analyze_local_image:
-          image_name: ${CIRCLE_PROJECT_REPONAME}:policy_fail
-          policy_failure: True
-      - anchore/parse_reports
+    - checkout
+    - run:
+        name: build container
+        command: docker build -t "${CIRCLE_PROJECT_REPONAME}:policy_fail" -f .circleci/node_critical_fail/Dockerfile .circleci/node_critical_fail/
+    - anchore/analyze_local_image:
+        image_name: "${CIRCLE_PROJECT_REPONAME}:policy_fail"
+        policy_failure: True
+    - anchore/parse_reports
 
   custom_policy_pass:
     executor: anchore/anchore_engine
     steps:
-      - checkout
-      - run:
-          name: build container
-          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:policy_pass -f .circleci/node_critical_pass/Dockerfile .circleci/node_critical_pass/
-      - anchore/analyze_local_image:
-          image_name: ${CIRCLE_PROJECT_REPONAME}:policy_pass
-          policy_failure: True
-      - anchore/parse_reports
+    - checkout
+    - run:
+        name: build container
+        command: docker build -t "${CIRCLE_PROJECT_REPONAME}:policy_pass" -f .circleci/node_critical_pass/Dockerfile .circleci/node_critical_pass/
+    - anchore/analyze_local_image:
+        image_name: "${CIRCLE_PROJECT_REPONAME}:policy_pass"
+        policy_failure: True
+    - anchore/parse_reports
 
-  build_stateless_container:
-    machine: true
-    steps:
-      - checkout
-      - run:
-          name: Build container
-          command: |
-            sudo apt-get update && sudo apt-get install docker
-            ./scripts/build_image.sh
-      - run:
-          name: Push to Dockerhub
-          command: |
-            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-            docker push "${IMAGE_NAME}:${IMAGE_TAG}"
-            # if [ "$CIRCLE_BRANCH" == "master" ]; then
-            #   echo "${IMAGE_NAME}:${IMAGE_TAG}"
-            #   docker push "${IMAGE_NAME}:${IMAGE_TAG}"
-            # else
-            #   echo "Only images built on the 'master' branch are pushed to Dockerhub"
-            # fi
-            
   publish_dev_orb:
     docker:
-      - image: circleci/circleci-cli:latest
+    - image: circleci/circleci-cli:latest
     steps:
-      - checkout
-      - run:
-          name: Validate orb
-          command: circleci orb validate circleci-orbs/anchore-engine/orb.yml --token ${CIRCLECI_TOKEN}
-      - run:
-          name: Publish dev orb
-          command: circleci orb publish circleci-orbs/anchore-engine/orb.yml anchore/anchore-engine@dev:latest --token ${CIRCLECI_TOKEN}
+    - checkout
+    - run:
+        name: Validate orb
+        command: circleci orb validate circleci-orbs/anchore-engine/orb.yml --token "$CIRCLECI_TOKEN"
+    - run:
+        name: Publish dev orb
+        command: circleci orb publish circleci-orbs/anchore-engine/orb.yml anchore/anchore-engine@dev:latest --token "$CIRCLECI_TOKEN"
+
+  build_stateless_image:
+    machine: true
+    steps:
+    - checkout
+    - run:
+        name: Build container
+        command: scripts/build_image.sh
+    - pull_test_image:
+        image_names: "('alpine:latest' 'node:latest' 'anchore/anchore-engine:latest')"
+    - run:
+        name: Test stateless container
+        command: docker run -t -v ~/images:/anchore-engine:rw "${IMAGE_NAME}:ci"
+    - run:
+        name: Push to Dockerhub
+        command: |
+          echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+          docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:${IMAGE_TAG}"
+          docker push "${IMAGE_NAME}:${IMAGE_TAG}"
+          # if [ "$CIRCLE_BRANCH" == "master" ]; then
+          #   echo "${IMAGE_NAME}:${IMAGE_TAG}"
+          #   docker push "${IMAGE_NAME}:${IMAGE_TAG}"
+          # else
+          #   echo "Only images built on the 'master' branch are pushed to Dockerhub"
+          # fi
 
 workflows:
   scan_image:
     jobs:
-      - build_stateless_container:
-          context: dockerhub
-      - custom_policy_fail
-      - custom_policy_pass
-      - local_image_scan
-      - anchore/image_scan:
-          image_name: 'anchore/anchore-engine:latest'
-          policy_bundle_file_path: ""
-      - anchore/image_scan:
-          context: dockerhub
-          image_name: 'anchore/private_testing:anchore-ui-dev'
-          private_registry: True
-          timeout: '500'
+    - build_stateless_image:
+        context: dockerhub
+    - custom_policy_pass
+    - custom_policy_fail:
+        requires:
+          - custom_policy_pass
+    - local_image_scan:
+        requires:
+          - custom_policy_pass
+    - anchore/image_scan:
+        requires:
+          - local_image_scan
+        image_name: 'anchore/anchore-engine:latest'
+        policy_bundle_file_path: ""
+    - anchore/image_scan:
+        requires:
+          - local_image_scan
+        context: dockerhub
+        image_name: 'anchore/private_testing:anchore-ui-dev'
+        private_registry: True
+        timeout: '500'
