@@ -24,7 +24,8 @@ ALL_VULN_TYPES = ['all', 'non-os', 'os']
 
 
 def add_image(image_name):
-    print ("\nAdding {} to anchore engine for scanning.".format(image_name), flush=True)
+    image_basename = re.match(r'(?:.+\/)?([^:+].+)', image_name).group(1)
+    print ("\n{} submited to Anchore Engine.".format(image_basename), flush=True)
     cmd = 'anchore-cli --json image add {}'.format(image_name).split()
 
     try:
@@ -40,7 +41,7 @@ def add_image(image_name):
 
 
 def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln_type='all', report_directory="anchore-reports"):
-    image_basename = re.match(r'(?:.+/)?([^:]+)(?::.+)?', image_name).group(1)
+    image_basename = re.match(r'(?:.+\/)?([^:+].+)', image_name).group(1)
     if 'all' in content_type:
         content_type = ALL_CONTENT_TYPES
 
@@ -70,22 +71,22 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
     for report in active_report_cmds.keys():
         if report == 'content':
             for type in content_type:
-                file_name = '{}/{}-{}-{}-report.json'.format(report_dir, image_basename, report, type)
+                file_name = '{}/{}-{}-{}.json'.format(report_dir, image_basename.replace(':', '_'), report, type)
                 cmd = '{} {} {}'.format(ALL_REPORT_COMMANDS[report], image_name, type).split()
                 write_log_from_output(cmd, file_name)
 
         elif report == 'policy':
-            file_name = '{}/{}-{}-report.json'.format(report_dir, image_basename, report)
+            file_name = '{}/{}-{}.json'.format(report_dir, image_basename.replace(':', '_'), report)
             cmd = '{} {} --detail'.format(ALL_REPORT_COMMANDS[report], image_name).split()
             write_log_from_output(cmd, file_name, ignore_exit_code=True)
 
         elif report == 'vuln':
-            file_name = '{}/{}-{}-report.json'.format(report_dir, image_basename, report)
+            file_name = '{}/{}-{}.json'.format(report_dir, image_basename.replace(':', '_'), report)
             cmd = '{} {} {}'.format(ALL_REPORT_COMMANDS[report], image_name, vuln_type).split()
             write_log_from_output(cmd, file_name)
 
         else:
-            file_name = '{}/{}-{}-report.json'.format(report_dir, image_basename, report)
+            file_name = '{}/{}-{}.json'.format(report_dir, image_basename.replace(':', '_'), report)
             cmd = '{} {}'.format(ALL_REPORT_COMMANDS[report], image_name).split()
             write_log_from_output(cmd, file_name)
 
@@ -217,9 +218,9 @@ def wait_engine_available(health_check_urls=[], timeout=300, user='admin', pw='f
                 break
             print_status_message(last_status, status)
             last_status = status
-            time.sleep(10)
+            time.sleep(5)
 
-    print ("\n\nAnchore engine is available!\n", flush=True)
+    print ("\n\nAnchore Engine is available!\n", flush=True)
 
     return True
 

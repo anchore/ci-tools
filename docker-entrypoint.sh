@@ -15,44 +15,65 @@ export PATH=$PATH:/usr/lib/postgresql/9.6/bin/
 start_services () {
     echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts
     
-    printf '%s\n\n' "Starting anchore engine..."
+    printf '\n%s\n' "Starting Anchore Engine."
     nohup anchore-manager service start --all &> /var/log/anchore.log &
 
-    printf '%s\n' "Starting postgresql..."
+    echo "Starting Postgresql."
     touch /var/log/postgres.log && chown postgres:postgres /var/log/postgres.log
     nohup gosu postgres bash -c 'postgres &> /var/log/postgres.log &' &> /dev/null
     sleep 3 && gosu postgres pg_isready -d postgres --quiet && echo "Postgresql started successfully!"
     
-    printf '\n%s\n' "Starting docker registry..."
+    echo "Starting Docker registry."
     nohup registry serve /etc/docker/registry/config.yml &> /var/log/registry.log &
-    curl --silent --retry 3 --retry-connrefused "${ANCHORE_ENDPOINT_HOSTNAME}:5000" && printf '%s\n\n' "Docker registry started successfully!"
+    curl --silent --retry 3 --retry-connrefused "${ANCHORE_ENDPOINT_HOSTNAME}:5000" && echo "Docker registry started successfully!"
 }
 
 anchore_analysis () {
     image_name="${1%.*}"
-    skopeo copy --dest-tls-verify=false "docker-archive:/anchore-engine/${1}" "docker://${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_name}:analyze"
-    anchore_ci_tools.py -ar --image "${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_name}:analyze"
+    image_repo="${image_name%_*}"
+    image_tag="${image_name#*_}"
+    skopeo copy --dest-tls-verify=false "docker-archive:/anchore-engine/${1}" "docker://${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"
+    anchore_ci_tools.py -ar --image "${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"
 }
 
-if [ ! $# -eq 0 ]; then
-    # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
-    if [ $1 = 'debug' ]; then
-        start_services
-        exec "${@:2}"
-    else
-        exec "$@"
-    fi
-else
-    start_services
-    anchore-cli system wait --feedsready "vulnerabilities,nvd" && printf '\n%s\n' "Anchore Engine started successfully!"
-    printf '\n%s\n\n' "Searching for docker image archive files in /anchore-engine."
-    find /anchore-engine -type f -exec bash -c 'if [[ $(skopeo inspect "docker-archive:${0}" 2> /dev/null) ]];then echo "$0" >> /tmp/scan_files.txt; else echo "Ignoring invalid docker archive: $0"; fi' {} \;
-    if [ -e /tmp/scan_files.txt ]; then
-        for i in $(uniq /tmp/scan_files.txt); do
-            printf '\n%s\n\n' "Preparing docker image archive for analysis: $(basename $i)"
+prepare_image () {
+    #anchore-cli system wait --feedsready "vulnerabilities,nvd" && printf '\n%s\n' "Anchore Engine started successfully!"
+    echo "Waiting for Anchore Engine to be available."
+    anchore_ci_tools.py --wait
+    printf '%s\n' "Searching for Docker archive files in /anchore-engine."
+    for i in $(find /anchore-engine -type f); do
+        if [[ $(skopeo inspect "docker-archive:${i}" 2> /dev/null) ]]; then 
+            scan_files+=("$i")
+            echo "Found docker archive: $i"
+        else 
+            echo "Ignoring invalid docker archive: $i"
+        fi
+    done
+    
+    if [[ "${#scan_files[@]}" -gt 0 ]]; then
+        for i in $((IFS=$'\n'; sort <<< "${scan_files[*]}") | uniq); do
+            printf '\n%s\n' "Adding image to Anchore Engine: $(basename $i)"
             anchore_analysis $(basename "$i")
         done
     else
-        printf '\n%s\n\n' "ERROR - No valid docker image archives found on mounted volume."
+        printf '\n%s\n\n' "ERROR - No valid docker archives provided."
     fi
+}
+
+if [[ "$#" -ne 0 ]]; then
+    # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
+    if [[ "$1" = 'debug' ]]; then
+        start_services
+        exec "${@:2}"
+    elif [[ "$1" = '/bin/bash' || "$1" = '/bin/sh' ]]; then
+        exec "$@"
+    else
+        image_name="$(echo $1 | rev | cut -d'/' -f1 | rev)"
+        cat <&0 > "/anchore-engine/$(echo $image_name | sed 's/:/_/g').tar"
+        start_services
+        prepare_image
+    fi
+else
+    start_services
+    prepare_image
 fi
