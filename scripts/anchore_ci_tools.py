@@ -25,7 +25,7 @@ ALL_VULN_TYPES = ['all', 'non-os', 'os']
 
 def add_image(image_name):
     image_basename = re.match(r'(?:.+\/)?([^:+].+)', image_name).group(1)
-    print ("\n{} submited to Anchore Engine.".format(image_basename), flush=True)
+    print ("\nImage submited to Anchore Engine: {}".format(image_basename), flush=True)
     cmd = 'anchore-cli --json image add {}'.format(image_name).split()
 
     try:
@@ -108,6 +108,21 @@ def get_config(config_path='/config/config.yaml', config_url='https://raw.github
     return True
 
 
+def get_image_digest(img_name, user='admin', pw='foobar', engine_url='http://localhost:8228/v1/images'):
+    cmd = 'anchore-cli --json image get {}'.format(img_name).split()
+    
+    try:
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as error:
+        output = error.output
+        raise Exception ("Failed to get image digest. Error: {}".format(output.decode('utf-8')))
+
+    img_details = json.loads(output.decode('utf-8'))
+    img_digest = img_details[0]['imageDigest']
+
+    return img_digest
+
+
 def get_image_info(img_digest, user='admin', pw='foobar', engine_url='http://localhost:8228/v1/images'):
     url = '{}/{}'.format(engine_url, img_digest)
     r = requests.get(url, auth=(user, pw), verify=False, timeout=20)
@@ -117,8 +132,6 @@ def get_image_info(img_digest, user='admin', pw='foobar', engine_url='http://loc
         return img_info
     else:
         raise Exception ("Bad response from Anchore Engine - httpcode={} data={}".format(r.status_code, r.text))
-
-    return True
 
 
 def is_engine_running():
@@ -287,9 +300,9 @@ def main(arg_parser):
         parser.print_help()
         raise Exception ("\n\nERROR - Must specify at least one option.")
 
-    if wait_engine and (setup_engine or image_name or generate_report or analyze_image):
+    if wait_engine and (setup_engine or generate_report or analyze_image):
         parser.print_help()
-        raise Exception ("\n\nERROR - The --wait option is standalone. Cannot be used with any other options.")
+        raise Exception ("\n\nERROR - The --wait option can only be used with the --image option or standalone.")
 
     if setup_engine and (image_name or generate_report or analyze_image):
         parser.print_help()
@@ -299,7 +312,7 @@ def main(arg_parser):
         parser.print_help()
         raise Exception ("\n\nERROR - Cannot analyze image or generate a report without specifying an image name.")
 
-    if image_name and not (generate_report or analyze_image):
+    if image_name and not (generate_report or analyze_image or wait_engine):
         parser.print_help()
         raise Exception ("\n\nERROR - Must specify an action to perform on image. Plase include --report or --analyze")
 
@@ -320,7 +333,11 @@ def main(arg_parser):
     anchore_pw = os.environ['ANCHORE_CLI_PASS']
 
     if wait_engine:
-        wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout, user=anchore_user, pw=anchore_pw)
+        if image_name:
+            img_digest = get_image_digest(image_name)
+            wait_image_analyzed(img_digest)
+        else:
+            wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout, user=anchore_user, pw=anchore_pw)
 
     elif setup_engine:
         get_config()
@@ -343,7 +360,9 @@ if __name__ == '__main__':
     try:
         arg_parser = setup_parser()
         main(arg_parser)
-
+    except KeyboardInterrupt:
+        print ("\n\nReceived interupt signal. Exiting...")
+        sys.exit(130)
     except Exception as error:
         print ("\n\nERROR executing script - Exception: {}".format(error))
         sys.exit(1)

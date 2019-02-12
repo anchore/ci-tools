@@ -2,7 +2,7 @@ FROM anchore/anchore-engine:dev
 
 RUN apt-get update; \
     apt-get upgrade; \
-    apt-get install -y ca-certificates wget gosu
+    apt-get install -y ca-certificates wget gosu jq
 
 # explicitly set user/group IDs for postgres
 # also create the postgres user's home directory with appropriate permissions
