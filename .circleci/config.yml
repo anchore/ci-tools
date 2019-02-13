@@ -94,11 +94,46 @@ jobs:
           #   echo "Only images built on the 'master' branch are pushed to Dockerhub"
           # fi
 
+  test_stateless_script:
+    docker:
+    - image: docker:stable-git
+    environment:
+      CURLOPT_FRESH_CONNECT: TRUE
+    steps:
+    - setup_remote_docker
+    - checkout
+    - run:
+        name: login to dockerhub
+        command: echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+    - run:
+        name: test base script
+        command: |
+          apk add curl bash
+          docker pull alpine:latest
+          curl -s https://raw.githubusercontent.com/anchore/ci-tools/stateless_ci_container/scripts/stateless_scan.sh | bash -s -- alpine:latest
+    - run:
+        name: test script multiple images
+        command: |
+          apk add curl bash
+          docker pull alpine:latest
+          docker pull ubuntu:latest
+          curl -s https://raw.githubusercontent.com/anchore/ci-tools/stateless_ci_container/scripts/stateless_scan.sh | bash -s -- alpine:latest ubuntu:latest
+    - run:
+        name: test script with policy bundle
+        command: |
+          apk add curl bash
+          docker pull alpine:latest
+          curl -s https://raw.githubusercontent.com/anchore/ci-tools/stateless_ci_container/scripts/stateless_scan.sh | bash -s -- -p".circleci/.anchore/policy_bundle.json" alpine:latest
+
 workflows:
   scan_image:
     jobs:
     - build_stateless_image:
         context: dockerhub
+    - test_stateless_script:
+        context: dockerhub
+        requires:
+          - build_stateless_image
     - custom_policy_pass
     - custom_policy_fail:
         requires:

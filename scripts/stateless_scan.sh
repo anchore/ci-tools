@@ -2,6 +2,8 @@
 
 set -e
 
+stateless_anchore_image="${ANCHORE_CI_IMAGE:-docker.io/anchore/private_testing:stateless_ci}"
+
 display_usage() {
 cat << EOF
 
@@ -9,8 +11,9 @@ cat << EOF
   
   Usage: ${0##*/} [ -d ./Dockerfile ] [ -p ./policy.json ] [ IMAGE_ONE ] [ IMAGE_TWO ... ]
 
-      -d Dockerfile path (optional)
-      -p Anchore policy bundle path (optional)
+      -d  Dockerfile path (optional)
+      -p  Anchore policy bundle path (optional)
+      -f  Fail script up failed Anchore policy evaluation
  
 EOF
 }
@@ -18,14 +21,23 @@ EOF
 cleanup() {
     ret="$?"
     set +e
-    declare docker_id="${name:-$(docker ps -a | grep 'stateless-anchore-engine' | awk '{print $1}')}"
+    if [[ -z "$docker_id" ]]; then
+        declare docker_id="${docker_name:-$(docker ps -a | grep 'stateless-anchore-engine' | awk '{print $1}')}"
+    fi
     if [[ ! -z "$docker_id" ]]; then
         for i in $docker_id; do
             printf '\n%s\n' "Cleaning up docker container: $docker_id"
             docker kill "$i" &> /dev/null
             docker rm "$i" &> /dev/null
-            unset name
+            sleep 5
+            unset docker_id
         done
+    fi
+    if [[ -e /tmp/anchore-fifo ]]; then
+        rm /tmp/anchore-fifo
+    fi
+    if [[ -f "/tmp/${file_name}" ]]; then
+        rm "/tmp/${file_name}"
     fi
     set -e
     exit "$ret"
@@ -34,10 +46,11 @@ cleanup() {
 trap 'cleanup' EXIT SIGTERM SIGINT
 
 # Parse options
-while getopts ':d:p:h' option; do
+while getopts ':d:p:fh' option; do
   case "$option" in
     h  ) display_usage >&2; exit;;
     d  ) d_flag=true; dockerfile="$OPTARG";;
+    f  ) f_flag=true;;
     p  ) p_flag=true; policy_bundle="$OPTARG";;
     \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}"; display_usage >&2; exit 1;;
     :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument."; display_usage >&2; exit 1;;
@@ -46,12 +59,12 @@ done
 
 shift "$((OPTIND - 1))"
 
-if [[ "${#@}" -eq 0 ]]; then
+if [[ ! $(which docker) ]]; then
+    printf '\n\t%s\n\n' 'ERROR - Docker is not installed or cannot be found in $PATH.'
+    exit 1
+elif [[ "${#@}" -eq 0 ]]; then
     printf '\n\t%s\n\n' "ERROR - $0 requires at least 1 image name as input."
     display_usage
-    exit 1
-elif [[ ! $(which docker) ]]; then
-    printf '\n\t%s\n\n' 'ERROR - Docker is not installed or cannot be found in $PATH.'
     exit 1
 elif [[ "$d_flag" ]] && [[ "${#@}" -gt 1 ]]; then
     printf '\n\t%s\n\n' 'ERROR - If specifying a Dockerfile, only 1 image can be scanned at a time.'
@@ -59,7 +72,6 @@ elif [[ "$d_flag" ]] && [[ "${#@}" -gt 1 ]]; then
     exit 1
 fi
 
-stateless_anchore_image="${ANCHORE_CI_IMAGE:-docker.io/anchore/private_testing:stateless_ci}"
 image_names=()
 failed_images=()
 scan_images=()
@@ -100,17 +112,39 @@ if [[ -z "$ANCHORE_CI_IMAGE" ]]; then
     docker pull "$stateless_anchore_image"
 fi
 
-for i in "${scan_images[@]}"; do
-    echo "Preparing image for analysis: $i"
-    name="${RANDOM:-TEMP}-stateless-anchore-engine"
-    if [[ "$d_flag" ]] && [[ "$p_flag" ]]; then
-        docker save "$i" | docker run -i --name "$name" "$stateless_anchore_image" -d"$(cat $dockerfile)" -p"$(cat $policy_bundle)" "$i"
-    elif [[ "$d_flag" ]]; then
-        docker save "$i" | docker run -i --name "$name" "$stateless_anchore_image" -d"$(cat $dockerfile)" "$i"
-    elif [[ "$p_flag" ]]; then
-        docker save "$i" | docker run -i --name "$name" "$stateless_anchore_image" -p"$(cat $policy_bundle)" "$i"
+start_container() {
+    if [[ ! "d_flag" ]] && [[ ! "p_flag" ]]; then
+        docker save "$i" | docker run -i --name "$docker_name" "$stateless_anchore_image" -i"$i"
     else
-        docker save "$i" | docker run -i --name "$name" "$stateless_anchore_image" "$i"
+        docker save "$1" -o "/tmp/${2}"
+        docker cp "/tmp/${2}" "${docker_name}:/anchore-engine/${2}"
+        rm "/tmp/${2}"
+        docker start -ia "$docker_name"
     fi
-    docker cp "${name}:/anchore-engine/anchore-reports/" ./
+}
+
+for i in "${scan_images[@]}"; do
+    repo="${i%:*}"
+    tag="${i#*:}"
+    file_name="${repo}+${tag}.tar"
+    printf '\n%s\n' "Preparing image for analysis: $i"
+    docker_name="${RANDOM:-TEMP}-stateless-anchore-engine"
+    create_cmd=('docker create --name "$docker_name" "$stateless_anchore_image"')
+    copy_cmds=()
+    if [[ "$d_flag" ]]; then
+        create_cmd+=('-d"$dockerfile"')
+        copy_cmds+=('docker cp "$dockerfile" "${docker_name}:/anchore-engine/$(basename $dockerfile)";')
+    fi
+    if [[ "$p_flag" ]]; then
+        create_cmd+=('-p"$policy_bundle"')
+        copy_cmds+=('docker cp "$policy_bundle" "${docker_name}:/anchore-engine/$(basename $policy_bundle)";')
+    fi
+    if [[ "$f_flag" ]]; then
+        create_cmd+=('-f')
+    fi
+    create_cmd+=('-i"$i" > /dev/null')
+    eval "${create_cmd[*]}"
+    eval "${copy_cmds[*]}"
+    start_container "$i" "$file_name"
+    docker cp "${docker_name}:/anchore-engine/anchore-reports/" ./
 done
