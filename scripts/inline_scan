@@ -1,0 +1,223 @@
+#!/bin/bash
+
+set -eo pipefail
+
+# TODO - update to versioned build of container before release 
+
+# If using a locally built stateless CI container, export ANCHORE_CI_IMAGE=<image_name>. 
+# This will override the image name from Dockerhub.
+stateless_anchore_image="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:dev}"
+
+display_usage() {
+cat << EOF
+  
+Stateless Anchore Engine --
+
+  Script for performing vulnerability analysis on local docker images, utilizing Anchore Engine in stateless mode.  
+  
+  Images should be built & tagged locally, or remote images can be pulled with the -r option.
+
+  
+  Usage: ${0##*/} [ -f ] [ -p ] [ -r ] [ -d ./Dockerfile ] [ -b ./policy.json ] [ IMAGE_ONE ] [ IMAGE_TWO ... ]
+
+      -b  (optional) Path to local Anchore policy bundle
+      -d  (optional) Path to local Dockerfile
+      -f  (optional) Exit script upon failed Anchore policy evaluation
+      -p  (optional) Pull remote docker images
+      -r  [optional] Generate analysis reports in your current working directory.
+ 
+EOF
+}
+
+interupt() {
+    cleanup
+}
+
+cleanup() {
+    ret="$?"
+    set +e
+
+    if [[ -z "$docker_id" ]]; then
+        docker_id="${docker_name:-$(docker ps -a | grep 'inline-anchore-engine' | awk '{print $1}')}"
+    fi
+
+    for id in $docker_id; do
+        declare timeout=0
+        while (docker ps -a | grep "${id:0:10}") > /dev/null && [[ "$timeout" -lt 12 ]]; do
+            docker kill "$id" &> /dev/null
+            docker rm "$id" &> /dev/null
+            printf '\n%s\n' "Cleaning up docker container: $id"
+            ((timeout=timeout+1))
+            sleep 5
+        done
+
+        if [[ "$timeout" -ge 12 ]]; then
+            exit 1
+        fi
+        unset docker_id
+    done
+    
+    if [[ "${#image_files[@]}" -ge 1 ]]; then
+        for file in "${image_files[@]}"; do
+            if [[ -f "$file" ]]; then
+                rm -f "/tmp/${file}"
+            fi
+        done
+    fi
+
+    exit "$ret"
+}
+
+trap 'cleanup' EXIT ERR SIGTERM 
+trap 'interupt' SIGINT
+
+# Parse options
+while getopts ':d:b:fhrp' option; do
+  case "$option" in
+    h  ) display_usage; exit;;
+    d  ) d_flag=true; dockerfile="$OPTARG";;
+    f  ) f_flag=true;;
+    r  ) r_flag=true;;
+    b  ) b_flag=true; policy_bundle="$OPTARG";;
+    p  ) p_flag=true;;
+    \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
+    :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
+  esac
+done
+
+shift "$((OPTIND - 1))"
+
+if [[ ! $(which docker) ]]; then
+    printf '\n\t%s\n\n' 'ERROR - Docker is not installed or cannot be found in $PATH.' >&2
+    display_usage >&2
+    exit 1
+elif [[ "$d_flag" ]] && [[ "${#@}" -gt 1 ]]; then
+    printf '\n\t%s\n\n' "ERROR - If specifying a Dockerfile, only 1 image can be scanned at a time." >&2
+    display_usage >&2
+    exit 1
+elif [[ "$r_flag" ]] && ! (mkdir -p ./anchore-reports); then
+    printf '\n\t%s\n\n' "ERROR - ${PWD}/anchore-reports is not writable." >&2
+    display_usage >&2
+    exit 1
+elif [[ "$b_flag" ]] && [[ ! -f "$policy_bundle" ]]; then
+    printf '\n\t%s\n\n' "ERROR - Policy Bundle: $policy_bundle does not exist." >&2
+    display_usage >&2
+    exit 1
+elif [[ "$d_flag" ]] && [[ ! -f "$dockerfile" ]]; then
+    printf '\n\t%s\n\n' "ERROR - Dockerfile: $dockerfile does not exist." >&2
+    display_usage >&2
+    exit 1
+elif [[ "${#@}" -eq 0 ]]; then
+    printf '\n\t%s\n\n' "ERROR - ${0##*/} requires at least 1 image name as input." >&2
+    display_usage >&2
+    exit 1
+fi
+
+
+image_names=()
+failed_images=()
+scan_images=()
+image_files=()
+
+for i in "$@"; do
+    if [[ ! "${image_names[@]}" =~ "$i" ]]; then
+        image_names+=("$i")
+    fi
+done
+
+if [[ "$p_flag" ]]; then
+    for i in "${image_names[@]}"; do
+        printf '\n%s\n' "Pulling image -- $i"
+        docker pull "$i"
+    done
+fi
+
+for i in "${image_names[@]}"; do
+    docker inspect "$i" &> /dev/null || failed_images+=("$i")
+
+    if [[ ! "${failed_images[@]}" =~ "$i" ]]; then
+        scan_images+=("$i")
+    fi
+done
+
+if [[ "${#failed_images[@]}" -gt 0 ]]; then
+    printf '\n\t%s\n\n' "### Please pull remote image, or build/tag all local images before attempting analysis again. ###" >&2
+
+    if [[ "${#failed_images[@]}" -ge "${#image_names[@]}" ]]; then
+        printf '\n\t%s\n\n' "ERROR - no local docker images specified in script input: $0 ${image_names[*]}" >&2
+        display_usage >&2
+        exit 1
+    fi
+
+    for i in "${failed_images[@]}"; do
+        printf '\t\t%s\n' "Could not find image locally - $i" >&2
+    done
+    echo
+fi
+
+if [[ -z "$ANCHORE_CI_IMAGE" ]]; then
+    printf '\n%s\n' "Pulling $stateless_anchore_image"
+    docker pull "$stateless_anchore_image"
+else
+    printf '\n%s\n' "Using local image for scanning -- $stateless_anchore_image"
+fi
+
+docker_name="${RANDOM:-TEMP}-inline-anchore-engine"
+
+copy_cmds=()
+create_cmd=('docker create --name "$docker_name" "$stateless_anchore_image"')
+run_cmd=("docker run -i --name $docker_name $stateless_anchore_image -i${scan_images[*]}")
+
+if [[ "$f_flag" ]]; then
+    create_cmd+=('-f')
+    run_cmd+=('-f')
+fi
+
+if [[ "$r_flag" ]]; then
+    create_cmd+=('-r')
+    run_cmd+=('-r')
+fi
+
+if [[ ! "$d_flag" ]] && [[ ! "$b_flag" ]] && [[ "${#scan_images[@]}" -eq 1 ]]; then
+    printf '\n%s\n' "Preparing image for analysis -- ${scan_images[*]}"
+    docker save "$i" | eval "${run_cmd[*]}"
+else
+    if [[ "$b_flag" ]]; then
+        create_cmd+=('-b"$policy_bundle"')
+        copy_cmds+=('docker cp "$policy_bundle" "${docker_name}:/anchore-engine/$(basename $policy_bundle)";')
+    fi
+    
+    if [[ "$d_flag" ]]; then
+        create_cmd+=('-d"$dockerfile" -i"${scan_images[*]}"')
+        copy_cmds+=('docker cp "$dockerfile" "${docker_name}:/anchore-engine/$(basename $dockerfile)";')
+    fi
+
+    docker_id=$(eval "${create_cmd[*]}")
+    eval "${copy_cmds[*]}"
+    echo
+    for image in "${scan_images[@]}"; do
+        echo "Preparing image for analysis -- $image"
+        repo=$(basename "${image%:*}")
+        tag="${image#*:}"
+        file_name="${repo}+${tag}.tar" 
+        image_files+=("$file_name")
+
+        docker save "$image" -o "/tmp/${file_name}"
+
+        if [[ -f "/tmp/${file_name}" ]]; then
+            docker cp "/tmp/${file_name}" "${docker_name}:/anchore-engine/${file_name}"
+            rm -f "/tmp/${file_name}"
+        else
+            printf '\n\t%s\n\n' "ERROR - unable to save docker image to /tmp/${file_name}." >&2
+            display_usage >&2
+            exit 1
+        fi
+    done
+
+    docker start -ia "$docker_name"
+fi
+
+if [[ "$r_flag" ]]; then
+    echo "Copying analysis reports from ${docker_name} to ${PWD}/anchore-reports/"
+    docker cp "${docker_name}:/anchore-engine/anchore-reports/" ./
+fi

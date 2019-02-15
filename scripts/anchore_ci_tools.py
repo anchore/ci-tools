@@ -13,7 +13,7 @@ global ALL_CONTENT_TYPES
 global ALL_REPORT_COMMANDS
 global ALL_VULN_TYPES
 
-ALL_CONTENT_TYPES = ['os', 'python', 'java', 'gem', 'npm']
+ALL_CONTENT_TYPES = ['os', 'python', 'java', 'gem', 'npm', 'files']
 ALL_REPORT_COMMANDS = {
     'content': 'anchore-cli --json image content',
     'vuln': 'anchore-cli --json image vuln',
@@ -93,7 +93,7 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
     return True
 
 
-def get_config(config_path='/config/config.yaml', config_url='https://raw.githubusercontent.com/anchore/anchore-engine/v0.3.0/scripts/docker-compose/config.yaml'):
+def get_config(config_path='/config/config.yaml', config_url='https://raw.githubusercontent.com/anchore/ci-tools/conf/stateless_ci_config.yaml'):
     conf_dir = os.path.dirname(config_path)
     if not os.path.exists(conf_dir):
         os.makedirs(conf_dir)
@@ -260,20 +260,28 @@ def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
 
 
 def write_log_from_output(command, file_name, ignore_exit_code=False):
+    skip_empty_values = ['vulnerabilities', 'content']
     try:
         output = subprocess.check_output(command)
-        with open(file_name, 'w') as file:
-            file.write(output.decode('utf-8'))
+        output_json = json.loads(output)
+        if not type(output_json) is dict or not bool(set(output_json.keys()).intersection(skip_empty_values)) or [x for x in output_json.keys() if x in skip_empty_values and not output_json[x] == []]:
+            with open(file_name, 'w') as file:
+                file.write(output.decode('utf-8'))
+        else:
+            return False
 
     except subprocess.CalledProcessError as error:
-        output = error.output
-        output = output.decode('utf-8')
-        if not ignore_exit_code:
+        output = error.output.decode('utf-8')
+        output_json = json.loads(output)
+        if ignore_exit_code:
+            if not type(output_json) is dict or not bool(set(output_json.keys()).intersection(skip_empty_values)) or [x for x in output_json.keys() if x in skip_empty_values and not output_json[x] == []]:
+                with open(file_name, 'w') as file:
+                    file.write(output)
+            else:
+                return False
+        else:
             print ("Failed to generate {}. Exception: {} \n {}".format(file_name, error, output), flush=True)
             return False
-        else:
-            with open(file_name, 'w') as file:
-                file.write(output)
 
     print ("Successfully generated {}.".format(file_name), flush=True)
 
@@ -319,6 +327,7 @@ def main(arg_parser):
     anchore_env_vars = {
         'ANCHORE_HOST_ID' : 'localhost',
         'ANCHORE_ENDPOINT_HOSTNAME' : 'localhost',
+        'ANCHORE_CLI_URL' : 'http://localhost:8228/v1',
         'ANCHORE_CLI_USER' : 'admin',
         'ANCHORE_CLI_PASS' : 'foobar',
         'ANCHORE_CLI_SSL_VERIFY' : 'n'
@@ -331,6 +340,8 @@ def main(arg_parser):
 
     anchore_user = os.environ['ANCHORE_CLI_USER']
     anchore_pw = os.environ['ANCHORE_CLI_PASS']
+    anchore_cli_url = os.environ['ANCHORE_CLI_URL']
+    anchore_host = os.environ['ANCHORE_ENDPOINT_HOSTNAME']
 
     if wait_engine:
         if image_name:

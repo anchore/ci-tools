@@ -74,6 +74,17 @@ jobs:
     steps:
     - checkout
     - run:
+        name: Get Anchore Engine version
+        command: |
+          git clone git@github.com:anchore/anchore-engine.git
+          pushd anchore-engine
+          export ANCHORE_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
+          # TODO - REMOVE THIS SECTION BEFORE GOING TO PROD
+          echo $ANCHORE_VERSION
+          unset ANCHORE_VERSION
+          popd
+          rm -rf anchore-engine
+    - run:
         name: Build container
         command: scripts/build_image.sh
     - pull_test_image:
@@ -85,7 +96,7 @@ jobs:
         name: Test script
         command: |
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:ci"
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/stateless_scan" | bash -s -- alpine:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- alpine:latest
     - run:
         name: Push to Dockerhub
         command: |
@@ -111,30 +122,28 @@ jobs:
         name: login to dockerhub
         command: echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
     - run:
-        name: test script multiple images
+        name: test script multiple images & create reports
         command: |
           apk add curl bash
-          docker pull alpine:latest
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/stateless_scan" | bash -s -- alpine:latest centos:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -p -r alpine:latest centos:latest
     - run:
         name: test script dockerfile
         command: |
           apk add curl bash
-          docker pull alpine:latest
-          docker pull ubuntu:latest
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/stateless_scan" | bash -s -- -d".circleci/Dockerfile" docker:latest 
+          docker pull docker:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -d".circleci/Dockerfile" docker:latest 
     - run:
         name: test script with policy bundle
         command: |
           apk add curl bash
-          docker pull alpine:latest
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/stateless_scan.sh" | bash -s -- -p".circleci/.anchore/policy_bundle.json" anchore/anchore-engine:latest
+          docker pull docker.io/anchore/anchore-engine:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -b".circleci/.anchore/policy_bundle.json" docker.io/anchore/anchore-engine:latest
     - run:
         name: test script with policy bundle & dockerfile
         command: |
           apk add curl bash
-          docker pull alpine:latest
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/stateless_scan" | bash -s -- -d".circleci/node_critical_pass/Dockerfile" -p".circleci/.anchore/policy_bundle.json" node:latest
+          docker pull node:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -d".circleci/node_critical_pass/Dockerfile" -b".circleci/.anchore/policy_bundle.json" node:latest
 
 
 workflows:
@@ -147,9 +156,6 @@ workflows:
         requires:
           - build_stateless_image
     - custom_policy_pass
-    - custom_policy_fail:
-        requires:
-          - custom_policy_pass
     - local_image_scan:
         requires:
           - custom_policy_pass

@@ -1,4 +1,5 @@
-# anchore CI tools
+# anchore CI tools [![CircleCI](https://circleci.com/gh/anchore/ci-tools.svg?style=svg)](https://circleci.com/gh/anchore/ci-tools)
+
 `scripts/` - Contains scripts for running anchore engine directly in CI pipelines.
 
   * Currently only supports docker based CI/CD tools. Scripts are intended to run directly on the anchore/anchore-engine container.

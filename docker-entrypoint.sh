@@ -14,32 +14,35 @@ Stateless Anchore Engine --
   Also supports taking stdin from the docker save command (use -i option to specify image name).
   
 
-  Usage: ${0##*/} [ -d Dockerfile ] [ -p policy.json ] [ -i IMAGE_ONE ] [ -f ]
+  Usage: ${0##*/} [ -d Dockerfile ] [ -b policy.json ] [ -i IMAGE_ONE ] [ -f ] [ -r ]
 
       -d  [optional] Dockerfile name - must be mounted/copied to /anchore-engine
       -i  [optional] Image name or file name location (use image name if piping in docker save stdout)
-      -p  [optional] Anchore policy bundle name - must be mounted/copied to /anchore-engine
+      -b  [optional] Anchore policy bundle name - must be mounted/copied to /anchore-engine
       -f  [optional] Exit script upon failed Anchore policy evaluation
+      -r  [optional] Generate analysis reports.
  
 EOF
 }
 
 error() {
+    set +e
     printf '\n\n\t%s\n\n' "ERROR - $0 received SIGTERM or SIGINT" >&2
     # kill anchore_ci_tools.py script while it's in a wait loop
     pkill -f python3 &> /dev/null
-    exit 1
+    exit 130
 }
 
-trap 'error' SIGTERM SIGINT
+trap 'error' SIGINT
 
 # Parse options
-while getopts ':d:p:i:fh' option; do
+while getopts ':d:b:i:fhr' option; do
   case "${option}" in
     d  ) d_flag=true; dockerfile="/anchore-engine/$(basename $OPTARG)";;
-    p  ) p_flag=true; policy_bundle="/anchore-engine/$(basename $OPTARG)";;
+    b  ) b_flag=true; policy_bundle="/anchore-engine/$(basename $OPTARG)";;
     i  ) i_flag=true; image_name="${OPTARG}";;
     f  ) f_flag=true;;
+    r  ) r_flag=true;;
     h  ) display_usage; exit;;
     \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
     :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
@@ -73,7 +76,7 @@ if [[ "$i_flag" ]]; then
     fi
 fi
 
-if [[ "$p_flag" ]] && [[ ! -f "$policy_bundle" ]]; then
+if [[ "$b_flag" ]] && [[ ! -f "$policy_bundle" ]]; then
     printf '\n\t%s\n\n' "ERROR - Can not find policy bundle file at: $policy_bundle" >&2
     display_usage >&2
     exit 1
@@ -106,24 +109,30 @@ main() {
         exit 1
     fi
 
-    if [[ "$p_flag" ]]; then
+    if [[ "$b_flag" ]]; then
         (anchore-cli --json policy add "$policy_bundle" | jq '.policyId' | xargs anchore-cli policy activate) || \
             printf "\n%s\n" "Unable to activate policy bundle - $policy_bundle -- using default policy bundle." >&2
     fi
-
-    for image in "${finished_images[@]}"; do
-        anchore_ci_tools.py -r --image "$image"
-    done
-    echo
-    for image in "${finished_images[@]}"; do
-        printf '\n\t%s\n' "Policy Evaluation - ${image#*/}"
-        printf '%s\n\n' "-------------------------------------------------------------"
-        if [[ "$f_flag" ]]; then
-            anchore-cli evaluate check "$image" --detail
-        else
-            (set +o pipefail; anchore-cli evaluate check "$image" --detail | tee /dev/null)
+    
+    if [[ "${#finished_images[@]}" -ge 1 ]]; then
+        if [[ "$r_flag" ]]; then
+            for image in "${finished_images[@]}"; do
+                anchore_ci_tools.py -r --image "$image"
+            done
         fi
-    done
+        echo
+        for image in "${finished_images[@]}"; do
+            printf '\n\t%s\n' "Policy Evaluation - ${image#*/}"
+            printf '%s\n\n' "-------------------------------------------------------------"
+            (set +o pipefail; anchore-cli evaluate check "$image" --detail | tee /dev/null)
+        done
+
+        if [[ "$f_flag" ]]; then
+            for image in "${finished_images[@]}"; do
+                anchore-cli evaluate check "$image"
+            done
+        fi
+    fi
 }
 
 start_services() {
@@ -134,7 +143,7 @@ start_services() {
     export ANCHORE_DB_HOST="$ANCHORE_ENDPOINT_HOSTNAME"
     export ANCHORE_HOST_ID="$ANCHORE_ENDPOINT_HOSTNAME"
     export ANCHORE_CLI_URL="http://${ANCHORE_ENDPOINT_HOSTNAME}:8228/v1"
-    export PATH=$PATH:/usr/lib/postgresql/9.6/bin/
+    export PATH=${PATH}:/usr/lib/postgresql/${PG_MAJOR}/bin/
 
     echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts
     printf '\n%s\n' "Starting Anchore Engine."
@@ -152,8 +161,9 @@ start_services() {
 }
 
 prepare_images() {
-    #anchore-cli system wait --feedsready "vulnerabilities,nvd" && printf '\n%s\n' "Anchore Engine started successfully!"
     echo "Waiting for Anchore Engine to be available."
+
+    # anchore-cli system wait --feedsready "vulnerabilities,nvd" && printf '\n%s\n' "Anchore Engine started successfully!"
 
     # pass python script to background process & wait, required to handle keyboard interrupt when running container non-interactively.
     anchore_ci_tools.py --wait &

@@ -1,18 +1,22 @@
-FROM anchore/anchore-engine:dev
+# TODO - change to release version of engine
+ARG ANCHORE_VERSION
+FROM anchore/anchore-engine:${ANCHORE_VERSION}
 
 RUN set -ex; \
     apt-get -y update; \
     apt-get -y upgrade; \
-    apt-get install -y ca-certificates gosu jq git; \
-    # TODO - remove this after new CLI release
+    apt-get install -y ca-certificates gosu jq; \
+    # TODO - remove block after new CLI release
+    apt-get install -y git; \
     sed -i 's|/src/anchorecli||' /usr/local/lib/python3.6/dist-packages/easy-install.pth; \
     rm -rf /src/*; \
     rm -rf /usr/local/lib/python3.6/dist-packages/anchorecli.egg-link; \
     cd /src; \
     pip3 install --upgrade -e git+git://github.com/anchore/anchore-cli.git@master\#egg=anchorecli; \
     apt-get remove -y git; \
-    rm -rf /anchore-engine/* /wheels /root/.cache /config/config.yaml
- 
+    # TODO - remove block after new CLI release
+    rm -rf /anchore-engine/* /root/.cache /config/config.yaml
+
 RUN set -ex; \
     groupadd -r postgres --gid=999; \
     useradd -r -g postgres --uid=999 --home-dir=/var/lib/postgresql --shell=/bin/bash postgres; \
@@ -37,8 +41,13 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*; \
     apt-get clean
 
-RUN mkdir -p /var/run/postgresql && chown -R postgres:postgres /var/run/postgresql && chmod 2775 /var/run/postgresql
-RUN mkdir -p "$PGDATA" && chown -R postgres:postgres "$PGDATA" && chmod 700 "$PGDATA"
+RUN set -eux; \
+    mkdir -p /var/run/postgresql; \
+    chown -R postgres:postgres /var/run/postgresql; \
+    chmod 2775 /var/run/postgresql; \
+    mkdir -p "$PGDATA"; \ 
+    chown -R postgres:postgres "$PGDATA"; \
+    chmod 700 "$PGDATA"
 
 COPY anchore-bootstrap.sql.gz /docker-entrypoint-initdb.d/
 
@@ -47,7 +56,7 @@ ENV POSTGRES_USER="postgres" \
     POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-mysecretpassword}"
 
 RUN set -eux; \
-    export PATH=$PATH:/usr/lib/postgresql/9.6/bin/; \
+    export PATH=${PATH}:/usr/lib/postgresql/${PG_MAJOR}/bin/; \
     gosu postgres bash -c 'initdb --username=${POSTGRES_USER} --pwfile=<(echo "$POSTGRES_PASSWORD")'; \
     printf '\n%s' "host all all all md5" >> "${PGDATA}/pg_hba.conf"; \
     PGUSER="${PGUSER:-$POSTGRES_USER}" \
