@@ -64,6 +64,48 @@ if [[ "$i_flag" ]]; then
     fi
 fi
 
+main() {
+    if [[ "${#@}" -ne 0 ]]; then
+        # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
+        if [[ "$1" = 'debug' ]]; then
+            start_services
+            exec "${@:2}"
+        else
+            exec "$@"
+        fi
+    fi
+
+    start_services
+    prepare_images
+
+    if [[ "${#scan_files[@]}" -gt 0 ]]; then
+        finished_images=()
+        for file in "${scan_files[@]}"; do
+            start_scan "$file"
+        done
+    else
+        printf '\n%s\n\n' "ERROR - No valid docker archives provided."
+        exit 1
+    fi
+
+    if [[ "$p_flag" ]]; then
+        (anchore-cli --json policy add "$policy_bundle" | jq '.policyId' | xargs anchore-cli policy activate) || \
+            printf "\n%s\n" "Unable to activate policy bundle - $policy_bundle - using default policy bundle."
+    fi
+
+    for image in "${finished_images[@]}"; do
+        anchore_ci_tools.py -r --image "$image"
+    done
+    echo
+    for image in "${finished_images[@]}"; do
+        if [[ "$f_flag" ]]; then
+            anchore-cli evaluate check "$image" --detail
+        else
+            (set +o pipefail; anchore-cli evaluate check "$image" --detail | tee /dev/null)
+        fi
+    done
+}
+
 start_services() {
     export PATH=$PATH:/usr/lib/postgresql/9.6/bin/
     echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts
@@ -79,7 +121,7 @@ start_services() {
     curl --silent --retry 3 --retry-connrefused "${ANCHORE_ENDPOINT_HOSTNAME}:5000" && echo "Docker registry started successfully!"
 }
 
-prepare_image() {
+prepare_images() {
     #anchore-cli system wait --feedsready "vulnerabilities,nvd" && printf '\n%s\n' "Anchore Engine started successfully!"
     echo "Waiting for Anchore Engine to be available."
     # pass python script to background process & wait, required to handle keyboard interrupt when running container non-interactively.
@@ -91,7 +133,7 @@ prepare_image() {
     # policy_bundle_array=()
     # dockerfile_array=()
     for i in $(find /anchore-engine -type f); do
-        if [[ $(skopeo inspect "docker-archive:${i}") ]] && [[ ! "${scan_files[@]}" =~ "$i" ]]; then 
+        if [[ $(skopeo inspect "docker-archive:${i}" 2> /dev/null) ]] && [[ ! "${scan_files[@]}" =~ "$i" ]]; then 
             scan_files+=("$i")
             echo "Found docker archive: $i"
         else 
@@ -109,27 +151,28 @@ prepare_image() {
 }
 
 start_scan() {
-    if [[ "${#scan_files[@]}" -gt 0 ]]; then
-        for i in "${scan_files[@]}"; do
-            printf '\n%s\n' "Adding image to Anchore Engine: $i"
-            anchore_analysis "$i"
-        done
-    else
-        printf '\n%s\n\n' "ERROR - No valid docker archives provided."
-        exit 1
-    fi
-}
-
-anchore_analysis() {
+    declare file="$1"
     if [[ -z "$image_name" ]]; then
-        image_repo="$(basename ${1%.*})"
-        image_tag="analyzed"
+        if [[ "$file" =~ (.+)[+](.+)[.]tar$ ]]; then
+            image_repo="$(basename ${BASH_REMATCH[1]})"
+            image_tag="${BASH_REMATCH[2]}"
+        else
+            image_repo="$(basename ${file%.*})"
+            image_tag="analyzed"
+        fi
     else
         image_repo="${image_name%:*}"
         image_tag="${image_name#*:}" 
     fi
-    anchore_image_name="${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"
-    skopeo copy --dest-tls-verify=false "docker-archive:${1}" "docker://${anchore_image_name}"
+    declare anchore_image_name="${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"
+    printf '\n%s\n' "Adding image to Anchore Engine: $anchore_image_name"
+    anchore_analysis "$file" "$anchore_image_name"
+}
+
+anchore_analysis() {
+    declare file="$1"
+    declare anchore_image_name="$2"
+    skopeo copy --dest-tls-verify=false "docker-archive:${file}" "docker://${anchore_image_name}"
     echo
     if [[ "$d_flag" ]] && [[ -f "$dockerfile" ]]; then
         anchore-cli image add "$anchore_image_name" --dockerfile "$dockerfile"
@@ -140,28 +183,7 @@ anchore_analysis() {
     anchore_ci_tools.py --wait --image "$anchore_image_name" &
     declare wait_proc="$!"
     wait "$wait_proc"
-    if [[ "$p_flag" ]]; then
-        (anchore-cli --json policy add "$policy_bundle" | jq '.policyId' | xargs anchore-cli policy activate) || \
-            printf "\n%s\n" "Unable to activate policy bundle - $policy_bundle - using default policy bundle."
-    fi
-    if [[ "$f_flag" ]]; then
-        anchore-cli evaluate check $anchore_image_name --detail
-    else
-        (set +o pipefail; anchore-cli evaluate check $anchore_image_name --detail | tee /dev/null)
-    fi
-    anchore_ci_tools.py -r --image "$anchore_image_name"
+    finished_images+=("$anchore_image_name")
 }
 
-if [[ "${#@}" -ne 0 ]]; then
-    # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
-    if [[ "$1" = 'debug' ]]; then
-        start_services
-        exec "${@:2}"
-    else
-        exec "$@"
-    fi
-fi
-
-start_services
-prepare_image
-start_scan
+main "$@"

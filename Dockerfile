@@ -1,18 +1,24 @@
 FROM anchore/anchore-engine:dev
 
-RUN apt-get update; \
-    apt-get upgrade; \
-    apt-get install -y ca-certificates wget gosu jq
-
-# explicitly set user/group IDs for postgres
-# also create the postgres user's home directory with appropriate permissions
+RUN set -ex; \
+    apt-get -y update; \
+    apt-get -y upgrade; \
+    apt-get install -y ca-certificates gosu jq git; \
+    # TODO - remove this after new CLI release
+    sed -i 's|/src/anchorecli||' /usr/local/lib/python3.6/dist-packages/easy-install.pth; \
+    rm -rf /src/*; \
+    rm -rf /usr/local/lib/python3.6/dist-packages/anchorecli.egg-link; \
+    cd /src; \
+    pip3 install --upgrade -e git+git://github.com/anchore/anchore-cli.git@py3_base64_decode\#egg=anchorecli; \
+    apt-get remove -y git; \
+    rm -rf /anchore-engine/* /wheels /root/.cache /config/config.yaml
+ 
 RUN set -ex; \
     groupadd -r postgres --gid=999; \
     useradd -r -g postgres --uid=999 --home-dir=/var/lib/postgresql --shell=/bin/bash postgres; \
     mkdir -p /var/lib/postgresql; \
     chown -R postgres:postgres /var/lib/postgresql; \
-    mkdir /docker-entrypoint-initdb.d; \
-    rm -f /config/config.yaml
+    mkdir /docker-entrypoint-initdb.d
 
 ENV PG_MAJOR="9.6"
 ENV PGDATA="/var/lib/postgresql/data"
@@ -28,7 +34,8 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends postgresql-common; \
     sed -ri 's/#(create_main_cluster) .*$/\1 = false/' /etc/postgresql-common/createcluster.conf; \
     apt-get install -y "postgresql-${PG_MAJOR}"; \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/*; \
+    apt-get clean
 
 RUN mkdir -p /var/run/postgresql && chown -R postgres:postgres /var/run/postgresql && chmod 2775 /var/run/postgresql
 RUN mkdir -p "$PGDATA" && chown -R postgres:postgres "$PGDATA" && chmod 700 "$PGDATA"
@@ -55,18 +62,15 @@ RUN set -eux; \
     PGUSER="${PGUSER:-$POSTGRES_USER}" \
     gosu postgres bash -c 'pg_ctl -D "$PGDATA" -m fast -w stop'; \
     unset PGPASSWORD; \
-    rm -f /docker-entrypoint-initdb.d/anchore-bootstrap.sql.gz; \
-    printf '\n%s\n\n' 'PostgreSQL init process complete, ready for start up.';
+    rm -f /docker-entrypoint-initdb.d/anchore-bootstrap.sql.gz
 
 ENV REGISTRY_VERSION 2.7
 
 RUN set -eux; \
     mkdir -p /etc/docker/registry; \
-    wget -O /usr/local/bin/registry https://github.com/docker/distribution-library-image/raw/release/${REGISTRY_VERSION}/amd64/registry; \
+    curl -L -H 'Accept: application/octet-stream' -o /usr/local/bin/registry https://github.com/docker/distribution-library-image/raw/release/${REGISTRY_VERSION}/amd64/registry; \
     chmod +x /usr/local/bin/registry; \
-    wget -O /etc/docker/registry/config.yml https://raw.githubusercontent.com/docker/distribution-library-image/release/${REGISTRY_VERSION}/amd64/config-example.yml; \
-    apt-get purge -y ca-certificates wget; \
-    rm -rf /wheels /root/.cache
+    curl -L -o /etc/docker/registry/config.yml https://raw.githubusercontent.com/docker/distribution-library-image/release/${REGISTRY_VERSION}/amd64/config-example.yml
 
 COPY conf/stateless_ci_config.yaml /config/config.yaml
 COPY scripts/anchore_ci_tools.py /usr/local/bin/

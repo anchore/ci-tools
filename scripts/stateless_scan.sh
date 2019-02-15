@@ -2,6 +2,8 @@
 
 set -e
 
+# If using a locally built stateless CI container, export ANCHORE_CI_IMAGE=<image_name>. 
+# This will override the image name from Dockerhub.
 stateless_anchore_image="${ANCHORE_CI_IMAGE:-docker.io/anchore/private_testing:stateless_ci}"
 
 display_usage() {
@@ -32,9 +34,6 @@ cleanup() {
             sleep 5
             unset docker_id
         done
-    fi
-    if [[ -e /tmp/anchore-fifo ]]; then
-        rm /tmp/anchore-fifo
     fi
     if [[ -f "/tmp/${file_name}" ]]; then
         rm "/tmp/${file_name}"
@@ -112,29 +111,26 @@ if [[ -z "$ANCHORE_CI_IMAGE" ]]; then
     docker pull "$stateless_anchore_image"
 fi
 
-start_container() {
-    if [[ ! "d_flag" ]] && [[ ! "p_flag" ]]; then
-        docker save "$i" | docker run -i --name "$docker_name" "$stateless_anchore_image" -i"$i"
-    else
-        docker save "$1" -o "/tmp/${2}"
+load_container() {
+    docker save "$1" -o "/tmp/${2}"
+    if [[ -f "/tmp/${2}" ]]; then
         docker cp "/tmp/${2}" "${docker_name}:/anchore-engine/${2}"
-        rm "/tmp/${2}"
-        docker start -ia "$docker_name"
+        rm -f "/tmp/${2}"
+    else
+        printf '\n%s\n\n' "ERROR - unable to save docker image to /tmp/${2}."
+        exit 1
     fi
 }
 
-for i in "${scan_images[@]}"; do
-    repo="${i%:*}"
-    tag="${i#*:}"
-    file_name="${repo}+${tag}.tar"
-    printf '\n%s\n' "Preparing image for analysis: $i"
-    docker_name="${RANDOM:-TEMP}-stateless-anchore-engine"
-    create_cmd=('docker create --name "$docker_name" "$stateless_anchore_image"')
+
+docker_name="${RANDOM:-TEMP}-stateless-anchore-engine"
+
+if [[ ! "d_flag" ]] && [[ ! "p_flag" ]] && [[ "${#scan_images[@]}" -eq 1 ]]; then
+    printf '\n%s\n\n' "Preparing image for analysis: ${scan_images[*]}"
+    docker save "$i" | docker run -i --name "$docker_name" "$stateless_anchore_image" -i"${scan_images[]}"
+else
     copy_cmds=()
-    if [[ "$d_flag" ]]; then
-        create_cmd+=('-d"$dockerfile"')
-        copy_cmds+=('docker cp "$dockerfile" "${docker_name}:/anchore-engine/$(basename $dockerfile)";')
-    fi
+    create_cmd=('docker create --name "$docker_name" "$stateless_anchore_image"')
     if [[ "$p_flag" ]]; then
         create_cmd+=('-p"$policy_bundle"')
         copy_cmds+=('docker cp "$policy_bundle" "${docker_name}:/anchore-engine/$(basename $policy_bundle)";')
@@ -142,9 +138,21 @@ for i in "${scan_images[@]}"; do
     if [[ "$f_flag" ]]; then
         create_cmd+=('-f')
     fi
-    create_cmd+=('-i"$i" > /dev/null')
-    eval "${create_cmd[*]}"
+    if [[ "$d_flag" ]]; then
+        create_cmd+=('-d"$dockerfile" -i"${scan_images[*]}"')
+        copy_cmds+=('docker cp "$dockerfile" "${docker_name}:/anchore-engine/$(basename $dockerfile)";')
+    fi
+    docker_id=$(eval "${create_cmd[*]}")
     eval "${copy_cmds[*]}"
-    start_container "$i" "$file_name"
-    docker cp "${docker_name}:/anchore-engine/anchore-reports/" ./
-done
+
+    for i in "${scan_images[@]}"; do
+        printf '%s\n' "Preparing image for analysis: $i"
+        repo="${i%:*}"
+        tag="${i#*:}"
+        file_name="${repo}+${tag}.tar" 
+        load_container "$i" "$file_name"
+    done
+    echo
+    docker start -ia "$docker_name"
+fi
+docker cp "${docker_name}:/anchore-engine/anchore-reports/" ./
