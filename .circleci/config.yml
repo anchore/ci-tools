@@ -16,8 +16,8 @@ commands:
           img_array=<< parameters.image_names >>
           for i in "${img_array[@]}"; do
             docker pull "$i"
-            img=$(echo "$i" | sed 's|/|-|g')
-            docker save "$i" -o ~/images/"${img%:*}".tar
+            img=$(echo "${i##*/}" | sed 's/:/+/g' )
+            docker save "$i" -o ~/images/"${img}".tar
           done
 
 jobs:
@@ -82,6 +82,11 @@ jobs:
         name: Test stateless container
         command: docker run -t -v ~/images:/anchore-engine:rw "${IMAGE_NAME}:ci"
     - run:
+        name: Test script
+        command: |
+          export ANCHORE_CI_IMAGE="${IMAGE_NAME}:ci"
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/stateless_scan" | bash -s -- alpine:latest
+    - run:
         name: Push to Dockerhub
         command: |
           echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
@@ -106,24 +111,31 @@ jobs:
         name: login to dockerhub
         command: echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
     - run:
-        name: test base script
-        command: |
-          apk add curl bash
-          docker pull alpine:latest
-          curl -s https://raw.githubusercontent.com/anchore/ci-tools/stateless_ci_container/scripts/stateless_scan.sh | bash -s -- alpine:latest
-    - run:
         name: test script multiple images
         command: |
           apk add curl bash
           docker pull alpine:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/stateless_scan" | bash -s -- alpine:latest centos:latest
+    - run:
+        name: test script dockerfile
+        command: |
+          apk add curl bash
+          docker pull alpine:latest
           docker pull ubuntu:latest
-          curl -s https://raw.githubusercontent.com/anchore/ci-tools/stateless_ci_container/scripts/stateless_scan.sh | bash -s -- alpine:latest ubuntu:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/stateless_scan" | bash -s -- -d".circleci/Dockerfile" docker:latest 
     - run:
         name: test script with policy bundle
         command: |
           apk add curl bash
           docker pull alpine:latest
-          curl -s https://raw.githubusercontent.com/anchore/ci-tools/stateless_ci_container/scripts/stateless_scan.sh | bash -s -- -p".circleci/.anchore/policy_bundle.json" alpine:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/stateless_scan.sh" | bash -s -- -p".circleci/.anchore/policy_bundle.json" anchore/anchore-engine:latest
+    - run:
+        name: test script with policy bundle & dockerfile
+        command: |
+          apk add curl bash
+          docker pull alpine:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/stateless_scan" | bash -s -- -d".circleci/node_critical_pass/Dockerfile" -p".circleci/.anchore/policy_bundle.json" node:latest
+
 
 workflows:
   scan_image:

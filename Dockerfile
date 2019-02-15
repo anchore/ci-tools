@@ -9,7 +9,7 @@ RUN set -ex; \
     rm -rf /src/*; \
     rm -rf /usr/local/lib/python3.6/dist-packages/anchorecli.egg-link; \
     cd /src; \
-    pip3 install --upgrade -e git+git://github.com/anchore/anchore-cli.git@py3_base64_decode\#egg=anchorecli; \
+    pip3 install --upgrade -e git+git://github.com/anchore/anchore-cli.git@master\#egg=anchorecli; \
     apt-get remove -y git; \
     rm -rf /anchore-engine/* /wheels /root/.cache /config/config.yaml
  

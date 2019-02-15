@@ -3,10 +3,12 @@
 set -euxo pipefail
 
 cleanup() {
+    ret="$?"
     rm anchore-bootstrap.sql.gz
     if [[ ! -z $db_preload_id ]]; then
         docker rm $db_preload_id
     fi
+    exit "$ret"
 }
 
 trap 'cleanup' EXIT SIGINT SIGTERM
