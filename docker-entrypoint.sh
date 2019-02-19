@@ -88,9 +88,12 @@ finished_images=()
 main() {
     if [[ "${#@}" -ne 0 ]]; then
         # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
-        if [[ "$1" = 'debug' ]]; then
+        if [[ "$1" = "debug" ]]; then
             start_services
             exec "${@:2}"
+        # use 'start' as the first input param for script. This will start all services & execs anchore-manager.
+        elif [[ "$1" = "start" ]]; then
+            start_services "exec"
         else
             exec "$@"
         fi
@@ -136,6 +139,8 @@ main() {
 }
 
 start_services() {
+    exec_anchore="$1"
+
     export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-mysecretpassword}"
     export ANCHORE_DB_PASSWORD="$POSTGRES_PASSWORD"
     export ANCHORE_DB_USER="$POSTGRES_USER"
@@ -146,8 +151,11 @@ start_services() {
     export PATH=${PATH}:/usr/lib/postgresql/${PG_MAJOR}/bin/
 
     echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts
-    printf '\n%s\n' "Starting Anchore Engine."
-    nohup anchore-manager service start --all &> /var/log/anchore.log &
+
+    if [[ ! "$exec_anchore" = "exec" ]]; then
+        printf '\n%s\n' "Starting Anchore Engine."
+        nohup anchore-manager service start --all &> /var/log/anchore.log &
+    fi
     
     echo "Starting Postgresql."
     touch /var/log/postgres.log && chown postgres:postgres /var/log/postgres.log
@@ -158,6 +166,11 @@ start_services() {
     echo "Starting Docker registry."
     nohup registry serve /etc/docker/registry/config.yml &> /var/log/registry.log &
     curl --silent --retry 3 --retry-connrefused "${ANCHORE_ENDPOINT_HOSTNAME}:5000" && echo "Docker registry started successfully!"
+
+    if [[ "$exec_anchore" = "exec" ]]; then
+        echo "Starting Anchore Engine."
+        exec anchore-manager service start --all
+    fi
 }
 
 prepare_images() {
