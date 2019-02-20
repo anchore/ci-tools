@@ -100,6 +100,13 @@ main() {
     fi
 
     start_services
+
+    echo "Waiting for Anchore Engine to be available."
+    # pass python script to background process & wait, required to handle keyboard interrupt when running container non-interactively.
+    anchore_ci_tools.py --wait &
+    declare wait_proc="$!"
+    wait "$wait_proc"
+    
     prepare_images
 
     if [[ "${#scan_files[@]}" -gt 0 ]]; then
@@ -139,7 +146,7 @@ main() {
 }
 
 start_services() {
-    exec_anchore="$1"
+    declare exec_anchore="$1"
 
     export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-mysecretpassword}"
     export ANCHORE_DB_PASSWORD="$POSTGRES_PASSWORD"
@@ -174,15 +181,6 @@ start_services() {
 }
 
 prepare_images() {
-    echo "Waiting for Anchore Engine to be available."
-
-    # anchore-cli system wait --feedsready "vulnerabilities,nvd" && printf '\n%s\n' "Anchore Engine started successfully!"
-
-    # pass python script to background process & wait, required to handle keyboard interrupt when running container non-interactively.
-    anchore_ci_tools.py --wait &
-    declare wait_proc="$!"
-    wait "$wait_proc"
-
     printf '%s\n\n' "Searching for Docker archive files in /anchore-engine."
     if [[ "$i_flag" ]]; then
         if [[ $(skopeo inspect "docker-archive:${file_name}" 2> /dev/null) ]]; then 

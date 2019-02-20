@@ -91,12 +91,12 @@ jobs:
         image_names: "('alpine:latest' 'node:latest' 'anchore/anchore-engine:latest')"
     - run:
         name: Test stateless container
-        command: docker run -t -v ~/images:/anchore-engine:rw "${IMAGE_NAME}:ci"
-    - run:
-        name: Test script
         command: |
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:ci"
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- alpine:latest
+          bash -x scripts/inline_scan -v ~/images
+    - run:
+        name: Test script
+        command: curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -p nginx:latest
     - run:
         name: Push to Dockerhub
         command: |

@@ -23,6 +23,27 @@ ALL_REPORT_COMMANDS = {
 ALL_VULN_TYPES = ['all', 'non-os', 'os']
 
 
+def setup_parser():
+    content_type_choices = [type for type in ALL_CONTENT_TYPES]
+    content_type_choices.append('all')
+    report_type_choices = [type for type in ALL_REPORT_COMMANDS.keys()]
+    report_type_choices.append('all')
+    vuln_type_choices = ALL_VULN_TYPES
+
+    parser = argparse.ArgumentParser(description="A tool that automates various anchore engine functions for CI pipelines. Intended to be run directly on the anchore/anchore-engine container.")
+    parser.add_argument('-a', '--analyze', action='store_true', help="Specify if you want image to be analyzed by anchore engine.")
+    parser.add_argument('-r', '--report', action='store_true', help="Generate reports on analyzed image.")
+    parser.add_argument('-s', '--setup', action='store_true', help="Sets up & starts anchore engine on running container.")
+    parser.add_argument('-w','--wait', action='store_true', help="Wait for anchore engine to start up.")
+    parser.add_argument('--image', help="Specify the image name. REQUIRED for analyze and report options.")
+    parser.add_argument('--timeout', default=300, type=int, help="Set custom timeout (in seconds) for image analysis and/or engine setup.")
+    parser.add_argument('--content', nargs='+', choices=content_type_choices, default='all', help="Specify what content reports to generate. Can pass multiple options. Ignored if --type content not specified. Available options are: [{}]".format(', '.join(content_type_choices)), metavar='')
+    parser.add_argument('--type', nargs='+', choices=report_type_choices, default='all', help="Specify what report types to generate. Can pass multiple options. Available options are: [{}]".format(', '.join(report_type_choices)), metavar='')
+    parser.add_argument('--vuln', choices=vuln_type_choices, default='all', help="Specify what vulnerability reports to generate. Available options are: [{}] ".format(', '.join(vuln_type_choices)), metavar='')
+
+    return parser
+
+
 def add_image(image_name):
     image_basename = re.match(r'(?:.+\/)?([^:+].+)', image_name).group(1)
     print ("\nImage submited to Anchore Engine: {}".format(image_basename), flush=True)
@@ -179,27 +200,6 @@ def print_status_message(last_status, status):
         print (".", end='', flush=True)
 
     return True
-
-
-def setup_parser():
-    content_type_choices = [type for type in ALL_CONTENT_TYPES]
-    content_type_choices.append('all')
-    report_type_choices = [type for type in ALL_REPORT_COMMANDS.keys()]
-    report_type_choices.append('all')
-    vuln_type_choices = ALL_VULN_TYPES
-
-    parser = argparse.ArgumentParser(description="A tool that automates various anchore engine functions for CI pipelines. Intended to be run directly on the anchore/anchore-engine container.")
-    parser.add_argument('-a', '--analyze', action='store_true', help="Specify if you want image to be analyzed by anchore engine.")
-    parser.add_argument('-r', '--report', action='store_true', help="Generate reports on analyzed image.")
-    parser.add_argument('-s', '--setup', action='store_true', help="Sets up & starts anchore engine on running container.")
-    parser.add_argument('-w','--wait', action='store_true', help="Wait for anchore engine to start up.")
-    parser.add_argument('--image', help="Specify the image name. REQUIRED for analyze and report options.")
-    parser.add_argument('--timeout', default=300, type=int, help="Set custom timeout (in seconds) for image analysis and/or engine setup.")
-    parser.add_argument('--content', nargs='+', choices=content_type_choices, default='all', help="Specify what content reports to generate. Can pass multiple options. Ignored if --type content not specified. Available options are: [{}]".format(', '.join(content_type_choices)), metavar='')
-    parser.add_argument('--type', nargs='+', choices=report_type_choices, default='all', help="Specify what report types to generate. Can pass multiple options. Available options are: [{}]".format(', '.join(report_type_choices)), metavar='')
-    parser.add_argument('--vuln', choices=vuln_type_choices, default='all', help="Specify what vulnerability reports to generate. Available options are: [{}] ".format(', '.join(vuln_type_choices)), metavar='')
-
-    return parser
 
 
 def start_anchore_engine():

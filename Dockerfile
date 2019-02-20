@@ -15,7 +15,7 @@ RUN set -ex; \
     pip3 install --upgrade -e git+git://github.com/anchore/anchore-cli.git@master\#egg=anchorecli; \
     apt-get remove -y git; \
     # TODO - remove block after new CLI release
-    rm -rf /anchore-engine/* /root/.cache /config/config.yaml
+    rm -rf /anchore-engine/* /root/.cache /config/config.yaml /docker-entrypoint.sh
 
 RUN set -ex; \
     groupadd -r postgres --gid=999; \
