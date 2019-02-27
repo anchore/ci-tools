@@ -83,7 +83,7 @@ RUN set -eux; \
 
 COPY conf/stateless_ci_config.yaml /config/config.yaml
 COPY scripts/anchore_ci_tools.py /usr/local/bin/
-COPY docker-entrypoint.sh /usr/local/bin/
+COPY scripts/docker-entrypoint.sh /usr/local/bin/
 
 ENV ANCHORE_ENDPOINT_HOSTNAME="anchore-engine"
 

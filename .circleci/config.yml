@@ -70,23 +70,19 @@ jobs:
         command: circleci orb publish circleci-orbs/anchore-engine/orb.yml anchore/anchore-engine@dev:latest --token "$CIRCLECI_TOKEN"
 
   build_stateless_image:
-    machine: true
+    machine: true      
     steps:
     - checkout
     - run:
-        name: Get Anchore Engine version
+        name: Build image
         command: |
           git clone git@github.com:anchore/anchore-engine.git
           pushd anchore-engine
           export ANCHORE_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
-          # TODO - REMOVE THIS SECTION BEFORE GOING TO PROD
-          echo $ANCHORE_VERSION
-          unset ANCHORE_VERSION
+          echo "ANCHORE_VERSION=$ANCHORE_VERSION"
           popd
           rm -rf anchore-engine
-    - run:
-        name: Build container
-        command: scripts/build_image.sh
+          scripts/build_image.sh
     - pull_test_image:
         image_names: "('alpine:latest' 'node:latest' 'anchore/anchore-engine:latest')"
     - run:
@@ -96,19 +92,22 @@ jobs:
           bash -x scripts/inline_scan -v ~/images
     - run:
         name: Test script
-        command: curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -p nginx:latest
+        command: |
+          export ANCHORE_CI_IMAGE="${IMAGE_NAME}:ci"
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -p nginx:latest
     - run:
         name: Push to Dockerhub
         command: |
+          echo "${IMAGE_NAME}:${IMAGE_TAG}"
           echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
           docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:${IMAGE_TAG}"
           docker push "${IMAGE_NAME}:${IMAGE_TAG}"
-          # if [ "$CIRCLE_BRANCH" == "master" ]; then
-          #   echo "${IMAGE_NAME}:${IMAGE_TAG}"
-          #   docker push "${IMAGE_NAME}:${IMAGE_TAG}"
-          # else
-          #   echo "Only images built on the 'master' branch are pushed to Dockerhub"
-          # fi
+          if [ "$CIRCLE_BRANCH" == "master" ]; then
+            docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${IMAGE_NAME}:${ANCHORE_VERSION}"
+            docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${IMAGE_NAME}:latest"
+            docker push "${IMAGE_NAME}:latest"
+            docker push "${IMAGE_NAME}:${ANCHORE_VERSION}"
+          fi
 
   test_stateless_script:
     docker:
@@ -125,24 +124,28 @@ jobs:
         name: test script multiple images & create reports
         command: |
           apk add curl bash
+          export ANCHORE_CI_IMAGE="${IMAGE_NAME}:dev"
           curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -p -r alpine:latest centos:latest
     - run:
         name: test script dockerfile
         command: |
           apk add curl bash
           docker pull docker:latest
+          export ANCHORE_CI_IMAGE="${IMAGE_NAME}:dev"
           curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -d".circleci/Dockerfile" docker:latest 
     - run:
         name: test script with policy bundle
         command: |
           apk add curl bash
           docker pull docker.io/anchore/anchore-engine:latest
+          export ANCHORE_CI_IMAGE="${IMAGE_NAME}:dev"
           curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -b".circleci/.anchore/policy_bundle.json" docker.io/anchore/anchore-engine:latest
     - run:
         name: test script with policy bundle & dockerfile
         command: |
           apk add curl bash
           docker pull node:latest
+          export ANCHORE_CI_IMAGE="${IMAGE_NAME}:dev"
           curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -d".circleci/node_critical_pass/Dockerfile" -b".circleci/.anchore/policy_bundle.json" node:latest
 
 
@@ -171,3 +174,14 @@ workflows:
         image_name: 'anchore/private_testing:anchore-ui-dev'
         private_registry: True
         timeout: '500'
+  nightly_build:
+    triggers:
+      - schedule:
+          cron: "0 16 * * *"
+          filters:
+            branches:
+              only:
+                - master
+    jobs:
+    - build_stateless_image:
+        context: dockerhub

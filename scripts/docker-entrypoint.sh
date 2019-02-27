@@ -5,22 +5,23 @@ set -eo pipefail
 display_usage() {
 cat << EOF
   
-Stateless Anchore Engine --
+Anchore Engine Inline Scan --
 
   Docker entrypoint for performing vulnerability analysis on local docker images.
   
   Starts Anchore Engine, Postgresql 9.6, and Docker Registry. 
-  Finds docker image archivescopied or mounted to /anchore-engine in the form of image+tag.tar.
+  Finds docker image archives copied or mounted to /anchore-engine in the form of image+tag.tar.
   Also supports taking stdin from the docker save command (use -i option to specify image name).
   
 
-  Usage: ${0##*/} [ -d Dockerfile ] [ -b policy.json ] [ -i IMAGE_ONE ] [ -f ] [ -r ]
+  Usage: ${0##*/} [ -f ] [ -r ] [ -d Dockerfile ] [ -b policy.json ] [ -i IMAGE_ONE ] [ -t 300 ]
 
-      -d  [optional] Dockerfile name - must be mounted/copied to /anchore-engine
-      -i  [optional] Image name or file name location (use image name if piping in docker save stdout)
-      -b  [optional] Anchore policy bundle name - must be mounted/copied to /anchore-engine
-      -f  [optional] Exit script upon failed Anchore policy evaluation
+      -d  [optional] Dockerfile name - must be mounted/copied to /anchore-engine.
+      -i  [optional] Image name or file name location (use image name if piping in docker save stdout).
+      -b  [optional] Anchore policy bundle name - must be mounted/copied to /anchore-engine.
+      -f  [optional] Exit script upon failed Anchore policy evaluation.
       -r  [optional] Generate analysis reports.
+      -t  [optional] Specify timeout for image scanning (defaults to 300s).
  
 EOF
 }
@@ -36,13 +37,14 @@ error() {
 trap 'error' SIGINT
 
 # Parse options
-while getopts ':d:b:i:fhr' option; do
+while getopts ':d:b:i:t:fhr' option; do
   case "${option}" in
     d  ) d_flag=true; dockerfile="/anchore-engine/$(basename $OPTARG)";;
     b  ) b_flag=true; policy_bundle="/anchore-engine/$(basename $OPTARG)";;
-    i  ) i_flag=true; image_name="${OPTARG}";;
+    i  ) i_flag=true; image_name="$OPTARG";;
     f  ) f_flag=true;;
     r  ) r_flag=true;;
+    t  ) t_flag=true; timeout="$OPTARG";;
     h  ) display_usage; exit;;
     \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
     :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
@@ -51,7 +53,8 @@ done
 
 shift "$((OPTIND - 1))"
 
-if [[ "$d_flag" ]] && [[ -z "$i_flag" ]]; then
+# Test options to ensure they're all valid. Error & display usage if not.
+if [[ "$d_flag" ]] && [[ ! "$i_flag" ]]; then
     printf '\n\t%s\n\n' "ERROR - must specify an image when passing a Dockerfile." >&2
     display_usage >&2
     exit 1
@@ -59,6 +62,18 @@ elif [[ "$d_flag" ]] && [[ ! -f "$dockerfile" ]]; then
     printf '\n\t%s\n\n' "ERROR - Can not find dockerfile at: $dockerfile" >&2
     display_usage >&2
     exit 1
+elif [[ "$b_flag" ]] && [[ ! -f "$policy_bundle" ]]; then
+    printf '\n\t%s\n\n' "ERROR - Can not find policy bundle file at: $policy_bundle" >&2
+    display_usage >&2
+    exit 1
+elif [[ "$t_flag" ]] && [[ ! "$timeout" =~ ^[0-9]+$ ]]; then
+    printf '\n\t%s\n\n' "ERROR - timeout must be set to a valid integer." >&2
+    display_usage >&2
+    exit 1
+fi
+
+if [[ ! "$t_flag" ]]; then
+    timeout=300
 fi
 
 if [[ "$i_flag" ]]; then
@@ -74,12 +89,6 @@ if [[ "$i_flag" ]]; then
         display_usage >&2
         exit 1
     fi
-fi
-
-if [[ "$b_flag" ]] && [[ ! -f "$policy_bundle" ]]; then
-    printf '\n\t%s\n\n' "ERROR - Can not find policy bundle file at: $policy_bundle" >&2
-    display_usage >&2
-    exit 1
 fi
 
 scan_files=()
@@ -103,7 +112,7 @@ main() {
 
     echo "Waiting for Anchore Engine to be available."
     # pass python script to background process & wait, required to handle keyboard interrupt when running container non-interactively.
-    anchore_ci_tools.py --wait &
+    anchore_ci_tools.py --wait --timeout "$timeout" &
     declare wait_proc="$!"
     wait "$wait_proc"
     
@@ -133,7 +142,7 @@ main() {
         echo
         for image in "${finished_images[@]}"; do
             printf '\n\t%s\n' "Policy Evaluation - ${image#*/}"
-            printf '%s\n\n' "-------------------------------------------------------------"
+            printf '%s\n\n' "---------------------------------------------------------------------------"
             (set +o pipefail; anchore-cli evaluate check "$image" --detail | tee /dev/null)
         done
 
@@ -242,7 +251,7 @@ anchore_analysis() {
     fi
 
     # pass python script to background process & wait, required to handle keyboard interrupt when running container non-interactively.
-    anchore_ci_tools.py --wait --image "$anchore_image_name" &
+    anchore_ci_tools.py --wait --timeout "$timeout" --image "$anchore_image_name" &
     declare wait_proc="$!"
     wait "$wait_proc"
 

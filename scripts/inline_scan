@@ -2,30 +2,29 @@
 
 set -eo pipefail
 
-# TODO - update to versioned build of container before release 
-
 # If using a locally built stateless CI container, export ANCHORE_CI_IMAGE=<image_name>. 
 # This will override the image name from Dockerhub.
-stateless_anchore_image="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:dev}"
+inline_scan_image="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:latest}"
 
 display_usage() {
 cat << EOF
   
-Stateless Anchore Engine --
+Anchore Engine Inline Scan --
 
-  Script for performing vulnerability analysis on local docker images, utilizing Anchore Engine in stateless mode.  
+  Wrapper script for performing vulnerability analysis on local docker images, utilizing Anchore Engine inline_scan container.  
   
-  Images should be built & tagged locally, or remote images can be pulled with the -r option.
+  Images should be built & tagged locally, or remote images can be pulled with the -p option.
 
   
-  Usage: ${0##*/} [ -f ] [ -p ] [ -r ] [ -v ./anchore_images ] [ -d ./Dockerfile ] [ -b ./policy.json ] [ IMAGE_ONE ] [ IMAGE_TWO ... ]
+  Usage: ${0##*/} [ -f ] [ -p ] [ -r ] [ -t 300 ] [ -v ./anchore_images ] [ -d ./Dockerfile ] [ -b ./policy.json ] [ IMAGE_ONE ] [ IMAGE_TWO ] [ ... ]
 
-      -b  [optional] Path to local Anchore policy bundle
-      -d  [optional] Path to local Dockerfile
+      -b  [optional] Path to local Anchore policy bundle.
+      -d  [optional] Path to local Dockerfile.
       -v  [optional] Path to directory to be mounted as docker volume. All image archives in directory will be scanned.
-      -f  [optional] Exit script upon failed Anchore policy evaluation
-      -p  [optional] Pull remote docker images
+      -f  [optional] Exit script upon failed Anchore policy evaluation.
+      -p  [optional] Pull remote docker images.
       -r  [optional] Generate analysis reports in your current working directory.
+      -t  [optional] Specify timeout for image scanning in seconds (defaults to 300s).
  
 EOF
 }
@@ -76,7 +75,7 @@ trap 'cleanup' EXIT ERR SIGTERM
 trap 'interupt' SIGINT
 
 # Parse options
-while getopts ':d:b:v:fhrp' option; do
+while getopts ':d:b:v:t:fhrp' option; do
   case "$option" in
     h  ) display_usage; exit;;
     d  ) d_flag=true; dockerfile="$OPTARG";;
@@ -84,6 +83,7 @@ while getopts ':d:b:v:fhrp' option; do
     r  ) r_flag=true;;
     b  ) b_flag=true; policy_bundle="$OPTARG";;
     p  ) p_flag=true;;
+    t  ) t_flag=true; timeout="$OPTARG";;
     v  ) v_flag=true; volume_path="$(cd "$(dirname "$OPTARG")"; pwd -P)/$(basename "$OPTARG")";;
     \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
     :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
@@ -122,8 +122,11 @@ elif [[ "$v_flag" ]] && [[ ! -d "$volume_path" ]]; then
 elif [[ "$v_flag" ]] && [[ "$d_flag" ]]; then
     printf '\n\t%s\n\n' "ERROR - cannot specify image volume & Dockerfile. Dockerfile option only supports scanning one image at time." >&2
     exit 1
+elif [[ "$t_flag" ]] && [[ ! "$timeout" =~ ^[0-9]+$ ]]; then
+    printf '\n\t%s\n\n' "ERROR - timeout must be set to a valid integer." >&2
+    display_usage >&2
+    exit 1
 fi
-
 
 image_names=()
 failed_images=()
@@ -167,21 +170,24 @@ if [[ "${#failed_images[@]}" -gt 0 ]]; then
 fi
 
 if [[ -z "$ANCHORE_CI_IMAGE" ]]; then
-    printf '\n%s\n' "Pulling $stateless_anchore_image"
-    docker pull "$stateless_anchore_image"
+    printf '\n%s\n' "Pulling $inline_scan_image"
+    docker pull "$inline_scan_image"
 else
-    printf '\n%s\n' "Using local image for scanning -- $stateless_anchore_image"
+    printf '\n%s\n' "Using local image for scanning -- $inline_scan_image"
 fi
 
 docker_name="${RANDOM:-TEMP}-inline-anchore-engine"
 
 copy_cmds=()
-run_cmd=("docker run -i --name $docker_name $stateless_anchore_image")
+run_cmd=()
+create_cmd=()
+
+run_cmd=("docker run -i --name $docker_name $inline_scan_image")
 
 if [[ "$v_flag" ]]; then
-    create_cmd=('docker create -v "${volume_path}:/anchore-engine:rw" --name "$docker_name" "$stateless_anchore_image"')
+    create_cmd=('docker create -v "${volume_path}:/anchore-engine:rw" --name "$docker_name" "$inline_scan_image"')
 else
-    create_cmd=('docker create --name "$docker_name" "$stateless_anchore_image"')
+    create_cmd=('docker create --name "$docker_name" "$inline_scan_image"')
 fi
 
 if [[ "$f_flag" ]]; then
@@ -194,18 +200,23 @@ if [[ "$r_flag" ]]; then
     run_cmd+=('-r')
 fi
 
+if [[ "$t_flag" ]]; then
+    create_cmd+=('-t "$timeout"')
+    run_cmd+=('-t "$timeout"')
+fi
+
 if [[ ! "$d_flag" ]] && [[ ! "$v_flag" ]] && [[ ! "$b_flag" ]] && [[ "${#scan_images[@]}" -eq 1 ]]; then
     printf '\n%s\n' "Preparing image for analysis -- ${scan_images[*]}"
-    run_cmd+=('-i${scan_images[*]}')
+    run_cmd+=('-i "${scan_images[*]}"')
     docker save "$i" | eval "${run_cmd[*]}"
 else
     if [[ "$b_flag" ]]; then
-        create_cmd+=('-b"$policy_bundle"')
+        create_cmd+=('-b "$policy_bundle"')
         copy_cmds+=('docker cp "$policy_bundle" "${docker_name}:/anchore-engine/$(basename $policy_bundle)";')
     fi
     
     if [[ "$d_flag" ]]; then
-        create_cmd+=('-d"$dockerfile" -i"${scan_images[*]}"')
+        create_cmd+=('-d "$dockerfile" -i "${scan_images[*]}"')
         copy_cmds+=('docker cp "$dockerfile" "${docker_name}:/anchore-engine/$(basename $dockerfile)";')
     fi
 

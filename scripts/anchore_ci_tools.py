@@ -345,8 +345,8 @@ def main(arg_parser):
 
     if wait_engine:
         if image_name:
-            img_digest = get_image_digest(image_name)
-            wait_image_analyzed(img_digest)
+            img_digest = get_image_digest(image_name, user=anchore_user, pw=anchore_pw)
+            wait_image_analyzed(img_digest, timeout=timeout, user=anchore_user, pw=anchore_pw)
         else:
             wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout, user=anchore_user, pw=anchore_pw)
 
@@ -358,7 +358,7 @@ def main(arg_parser):
     elif image_name:
         if analyze_image:
             img_digest = add_image(image_name)
-            wait_image_analyzed(img_digest, timeout, user=anchore_user, pw=anchore_pw)
+            wait_image_analyzed(img_digest, timeout=timeout, user=anchore_user, pw=anchore_pw)
         if generate_report:
             generate_reports(image_name, content_type, report_type, vuln_type)
 
