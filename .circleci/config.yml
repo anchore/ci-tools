@@ -82,6 +82,7 @@ jobs:
           echo "ANCHORE_VERSION=$ANCHORE_VERSION"
           popd
           rm -rf anchore-engine
+          echo $ANCHORE_VERSION > anchore_version.txt
           scripts/build_image.sh
     - pull_test_image:
         image_names: "('alpine:latest' 'node:latest' 'anchore/anchore-engine:latest')"
@@ -99,6 +100,8 @@ jobs:
         name: Push to Dockerhub
         command: |
           echo "${IMAGE_NAME}:${IMAGE_TAG}"
+          ANCHORE_VERSION=$(cat anchore_version.txt)
+          echo "$ANCHORE_VERSION"
           echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
           docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:${IMAGE_TAG}"
           docker push "${IMAGE_NAME}:${IMAGE_TAG}"
