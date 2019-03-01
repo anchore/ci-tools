@@ -144,8 +144,9 @@ def get_image_digest(img_name, user='admin', pw='foobar', engine_url='http://loc
     return img_digest
 
 
-def get_image_info(img_digest, user='admin', pw='foobar', engine_url='http://localhost:8228/v1/images'):
-    url = '{}/{}'.format(engine_url, img_digest)
+def get_image_info(img_digest, user='admin', pw='foobar', engine_url='http://localhost:8228/v1/'):
+    engine_url=re.sub('[/]$', '', engine_url)
+    url = '{}/images/{}'.format(engine_url, img_digest)
     r = requests.get(url, auth=(user, pw), verify=False, timeout=20)
 
     if r.status_code == 200:
@@ -166,8 +167,8 @@ def is_engine_running():
         return False
 
 
-def is_image_analyzed(image_digest, user='admin', pw='foobar'):
-    image_info = get_image_info(image_digest, user=user, pw=pw)
+def is_image_analyzed(image_digest, user='admin', pw='foobar', engine_url='http://localhost:8228/v1/'):
+    image_info = get_image_info(image_digest, user=user, pw=pw, engine_url=engine_url)
     img_status = image_info['analysis_status']
 
     if img_status == 'analyzed':
@@ -238,7 +239,7 @@ def wait_engine_available(health_check_urls=[], timeout=300, user='admin', pw='f
     return True
 
 
-def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
+def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar', engine_url='http://localhost:8228/v1/'):
     print ("Waiting for analysis to complete...", flush=True)
     last_img_status = str()
     is_analyzed = False
@@ -247,7 +248,7 @@ def wait_image_analyzed(image_digest, timeout=300, user='admin', pw='foobar'):
     while not is_analyzed:
         if time.time() - start_ts >= timeout:
             raise Exception("Timed out after {} seconds.".format(timeout))
-        is_analyzed, img_status = is_image_analyzed(image_digest, user=user, pw=pw)
+        is_analyzed, img_status = is_image_analyzed(image_digest, user=user, pw=pw, engine_url=engine_url)
         print_status_message(last_img_status, img_status)
         if is_analyzed:
             break
@@ -327,7 +328,7 @@ def main(arg_parser):
     anchore_env_vars = {
         'ANCHORE_HOST_ID' : 'localhost',
         'ANCHORE_ENDPOINT_HOSTNAME' : 'localhost',
-        'ANCHORE_CLI_URL' : 'http://localhost:8228/v1',
+        'ANCHORE_CLI_URL' : 'http://localhost:8228/v1/',
         'ANCHORE_CLI_USER' : 'admin',
         'ANCHORE_CLI_PASS' : 'foobar',
         'ANCHORE_CLI_SSL_VERIFY' : 'n'
@@ -341,24 +342,25 @@ def main(arg_parser):
     anchore_user = os.environ['ANCHORE_CLI_USER']
     anchore_pw = os.environ['ANCHORE_CLI_PASS']
     anchore_cli_url = os.environ['ANCHORE_CLI_URL']
-    anchore_host = os.environ['ANCHORE_ENDPOINT_HOSTNAME']
+    feeds_url='{}/system/feeds'.format(re.sub('[/]$', '', anchore_cli_url))
+    health_url='{}/health'.format(re.sub('/v1[/]*$', '', anchore_cli_url))
 
     if wait_engine:
         if image_name:
             img_digest = get_image_digest(image_name, user=anchore_user, pw=anchore_pw)
-            wait_image_analyzed(img_digest, timeout=timeout, user=anchore_user, pw=anchore_pw)
+            wait_image_analyzed(img_digest, timeout=timeout, user=anchore_user, pw=anchore_pw, engine_url=anchore_cli_url)
         else:
-            wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout, user=anchore_user, pw=anchore_pw)
+            wait_engine_available(health_check_urls=[health_url, feeds_url], timeout=timeout, user=anchore_user, pw=anchore_pw)
 
     elif setup_engine:
         get_config()
         start_anchore_engine()
-        wait_engine_available(health_check_urls=['http://localhost:8228/health', 'http://localhost:8228/v1/system/feeds'], timeout=timeout, user=anchore_user, pw=anchore_pw)
+        wait_engine_available(health_check_urls=[health_url, feeds_url], timeout=timeout, user=anchore_user, pw=anchore_pw)
 
     elif image_name:
         if analyze_image:
             img_digest = add_image(image_name)
-            wait_image_analyzed(img_digest, timeout=timeout, user=anchore_user, pw=anchore_pw)
+            wait_image_analyzed(img_digest, timeout=timeout, user=anchore_user, pw=anchore_pw, engine_url=anchore_cli_url)
         if generate_report:
             generate_reports(image_name, content_type, report_type, vuln_type)
 

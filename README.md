@@ -7,7 +7,7 @@ An assortment of scripts & tools for integrating Anchore Engine into your CI/CD 
   * Currently only supports docker based CI/CD tools. 
   * Script is intended to run directly on Anchore Engine containers.
 
-# Anchore inline_scan container
+# Anchore inline-scan container
 
 Image is built using the official Anchore Engine image base. It contains a Postgresql database preloaded with Anchore vulnerability data from https://github.com/anchore/engine-db-preload daily. Also contains a Docker registry which is used for passing images to Anchore Engine for vulnerability scanning.
 
