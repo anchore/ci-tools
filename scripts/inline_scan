@@ -4,7 +4,7 @@ set -eo pipefail
 
 # If using a locally built stateless CI container, export ANCHORE_CI_IMAGE=<image_name>. 
 # This will override the image name from Dockerhub.
-inline_scan_image="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:latest}"
+inline_scan_image="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:v0.3.3}"
 
 display_usage() {
 cat << EOF

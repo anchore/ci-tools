@@ -1,4 +1,3 @@
-# TODO - change to release version of engine
 ARG ANCHORE_VERSION
 FROM anchore/anchore-engine:${ANCHORE_VERSION}
 
@@ -6,15 +5,6 @@ RUN set -ex; \
     apt-get -y update; \
     apt-get -y upgrade; \
     apt-get install -y ca-certificates gosu jq; \
-    # TODO - remove block after new CLI release
-    apt-get install -y git; \
-    sed -i 's|/src/anchorecli||' /usr/local/lib/python3.6/dist-packages/easy-install.pth; \
-    rm -rf /src/*; \
-    rm -rf /usr/local/lib/python3.6/dist-packages/anchorecli.egg-link; \
-    cd /src; \
-    pip3 install --upgrade -e git+git://github.com/anchore/anchore-cli.git@master\#egg=anchorecli; \
-    apt-get remove -y git; \
-    # TODO - remove block after new CLI release
     rm -rf /anchore-engine/* /root/.cache /config/config.yaml /docker-entrypoint.sh
 
 RUN set -ex; \

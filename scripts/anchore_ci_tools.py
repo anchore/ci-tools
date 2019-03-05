@@ -46,7 +46,7 @@ def setup_parser():
 
 def add_image(image_name):
     image_basename = re.match(r'(?:.+\/)?([^:+].+)', image_name).group(1)
-    print ("\nImage submited to Anchore Engine: {}".format(image_basename), flush=True)
+    print ("\nImage submitted to Anchore Engine: {}".format(image_basename), flush=True)
     cmd = 'anchore-cli --json image add {}'.format(image_name).split()
 
     try:
@@ -323,7 +323,7 @@ def main(arg_parser):
 
     if image_name and not (generate_report or analyze_image or wait_engine):
         parser.print_help()
-        raise Exception ("\n\nERROR - Must specify an action to perform on image. Plase include --report or --analyze")
+        raise Exception ("\n\nERROR - Must specify an action to perform on image. Please include --report or --analyze")
 
     anchore_env_vars = {
         'ANCHORE_HOST_ID' : 'localhost',
