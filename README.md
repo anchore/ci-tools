@@ -9,7 +9,7 @@ An assortment of scripts & tools for integrating Anchore Engine into your CI/CD 
 
 # CircleCI Orbs
 
-Source code for CircleCi orbs can be found in circleci-orbs/<ORB>/.
+Source code for CircleCi orbs can be found in `circleci-orbs/<ORB>/`.
 
 # Anchore inline-scan container
 

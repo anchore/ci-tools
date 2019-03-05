@@ -39,12 +39,12 @@ trap 'error' SIGINT
 # Parse options
 while getopts ':d:b:i:t:fhr' option; do
   case "${option}" in
-    d  ) d_flag=true; dockerfile="/anchore-engine/$(basename $OPTARG)";;
-    b  ) b_flag=true; policy_bundle="/anchore-engine/$(basename $OPTARG)";;
-    i  ) i_flag=true; image_name="$OPTARG";;
+    d  ) d_flag=true; DOCKERFILE="/anchore-engine/$(basename $OPTARG)";;
+    b  ) b_flag=true; POLICY_BUNDLE="/anchore-engine/$(basename $OPTARG)";;
+    i  ) i_flag=true; IMAGE_NAME="$OPTARG";;
     f  ) f_flag=true;;
     r  ) r_flag=true;;
-    t  ) t_flag=true; timeout="$OPTARG";;
+    t  ) t_flag=true; TIMEOUT="$OPTARG";;
     h  ) display_usage; exit;;
     \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
     :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
@@ -58,34 +58,34 @@ if [[ "$d_flag" ]] && [[ ! "$i_flag" ]]; then
     printf '\n\t%s\n\n' "ERROR - must specify an image when passing a Dockerfile." >&2
     display_usage >&2
     exit 1
-elif [[ "$d_flag" ]] && [[ ! -f "$dockerfile" ]]; then
-    printf '\n\t%s\n\n' "ERROR - Can not find dockerfile at: $dockerfile" >&2
+elif [[ "$d_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
+    printf '\n\t%s\n\n' "ERROR - Can not find dockerfile at: $DOCKERFILE" >&2
     display_usage >&2
     exit 1
-elif [[ "$b_flag" ]] && [[ ! -f "$policy_bundle" ]]; then
-    printf '\n\t%s\n\n' "ERROR - Can not find policy bundle file at: $policy_bundle" >&2
+elif [[ "$b_flag" ]] && [[ ! -f "$POLICY_BUNDLE" ]]; then
+    printf '\n\t%s\n\n' "ERROR - Can not find policy bundle file at: $POLICY_BUNDLE" >&2
     display_usage >&2
     exit 1
-elif [[ "$t_flag" ]] && [[ ! "$timeout" =~ ^[0-9]+$ ]]; then
+elif [[ "$t_flag" ]] && [[ ! "$TIMEOUT" =~ ^[0-9]+$ ]]; then
     printf '\n\t%s\n\n' "ERROR - timeout must be set to a valid integer." >&2
     display_usage >&2
     exit 1
 fi
 
 if [[ ! "$t_flag" ]]; then
-    timeout=300
+    TIMEOUT=300
 fi
 
 if [[ "$i_flag" ]]; then
-    if [[ "$image_name" =~ (.*/|)([a-zA-Z0-9_.-]+):([a-zA-Z0-9_.-]+) ]]; then
-        file_name="/anchore-engine/${BASH_REMATCH[2]}+${BASH_REMATCH[3]}.tar"
-        if [[ ! -f "$file_name" ]]; then
-            cat <&0 > "$file_name"
+    if [[ "$IMAGE_NAME" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
+        FILE_NAME="/anchore-engine/${BASH_REMATCH[2]}+${BASH_REMATCH[3]:-latest}.tar"
+        if [[ ! -f "$FILE_NAME" ]]; then
+            cat <&0 > "$FILE_NAME"
         fi
-    elif [[ -f "/anchore-engine/$(basename ${image_name})" ]]; then
-        file_name="/anchore-engine/$(basename ${image_name})"
+    elif [[ -f "/anchore-engine/$(basename ${IMAGE_NAME})" ]]; then
+        FILE_NAME="/anchore-engine/$(basename ${IMAGE_NAME})"
     else
-        printf '\n\t%s\n\n' "ERROR - Could not find image file at: $file_name" >&2
+        printf '\n\t%s\n\n' "ERROR - Could not find image file at: $FILE_NAME" >&2
         display_usage >&2
         exit 1
     fi
@@ -112,7 +112,7 @@ main() {
 
     echo "Waiting for Anchore Engine to be available."
     # pass python script to background process & wait, required to handle keyboard interrupt when running container non-interactively.
-    anchore_ci_tools.py --wait --timeout "$timeout" &
+    anchore_ci_tools.py --wait --timeout "$TIMEOUT" &
     declare wait_proc="$!"
     wait "$wait_proc"
     
@@ -129,8 +129,8 @@ main() {
     fi
 
     if [[ "$b_flag" ]]; then
-        (anchore-cli --json policy add "$policy_bundle" | jq '.policyId' | xargs anchore-cli policy activate) || \
-            printf "\n%s\n" "Unable to activate policy bundle - $policy_bundle -- using default policy bundle." >&2
+        (anchore-cli --json policy add "$POLICY_BUNDLE" | jq '.policyId' | xargs anchore-cli policy activate) || \
+            printf "\n%s\n" "Unable to activate policy bundle - $POLICY_BUNDLE -- using default policy bundle." >&2
     fi
     
     if [[ "${#finished_images[@]}" -ge 1 ]]; then
@@ -191,12 +191,12 @@ start_services() {
 
 prepare_images() {
     printf '%s\n\n' "Searching for Docker archive files in /anchore-engine."
-    if [[ "$i_flag" ]]; then
-        if [[ $(skopeo inspect "docker-archive:${file_name}" 2> /dev/null) ]]; then 
-            scan_files+=("$file_name")
-            printf '\t%s\n' "Found Docker image archive:  $file_name"
+    if [[ "$FILE_NAME" ]]; then
+        if [[ $(skopeo inspect "docker-archive:${FILE_NAME}" 2> /dev/null) ]]; then 
+            scan_files+=("$FILE_NAME")
+            printf '\t%s\n' "Found Docker image archive:  $FILE_NAME"
         else 
-            printf '\n\t%s\n\n' "ERROR - Invalid Docker image archive:  $file_name" >&2
+            printf '\n\t%s\n\n' "ERROR - Invalid Docker image archive:  $FILE_NAME" >&2
             display_usage >&2
             exit 1
         fi
@@ -219,17 +219,20 @@ start_scan() {
     declare image_tag=""
     declare anchore_image_name=""
 
-    if [[ -z "$image_name" ]]; then
-        if [[ "$file" =~ (.+)[+](.+)[.]tar$ ]]; then
+    if [[ -z "$IMAGE_NAME" ]]; then
+        if [[ "$file" =~ (.+)[+]([^+].+)[.]tar$ ]]; then
             image_repo=$(basename "${BASH_REMATCH[1]}")
             image_tag="${BASH_REMATCH[2]}"
         else
-            image_repo=$(basename "${file%.*}")
-            image_tag="analyzed"
+            image_repo=$(basename "${file%.tar}")
+            image_tag="latest"
         fi
+    elif [[ $(basename $IMAGE_NAME) =~ [:]{1} ]]; then
+        image_repo=$(basename "${IMAGE_NAME%:*}")
+        image_tag="${IMAGE_NAME##*:}"
     else
-        image_repo="${image_name%:*}"
-        image_tag="${image_name#*:}" 
+        image_repo=$(basename "${IMAGE_NAME}")
+        image_tag="latest"
     fi
 
     anchore_image_name="${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"
@@ -244,14 +247,14 @@ anchore_analysis() {
 
     skopeo copy --dest-tls-verify=false "docker-archive:${file}" "docker://${anchore_image_name}"
     echo
-    if [[ "$d_flag" ]] && [[ -f "$dockerfile" ]]; then
-        anchore-cli image add "$anchore_image_name" --dockerfile "$dockerfile"
+    if [[ "$d_flag" ]] && [[ -f "$DOCKERFILE" ]]; then
+        anchore-cli image add "$anchore_image_name" --dockerfile "$DOCKERFILE"
     else
         anchore-cli image add "$anchore_image_name"
     fi
 
     # pass python script to background process & wait, required to handle keyboard interrupt when running container non-interactively.
-    anchore_ci_tools.py --wait --timeout "$timeout" --image "$anchore_image_name" &
+    anchore_ci_tools.py --wait --timeout "$TIMEOUT" --image "$anchore_image_name" &
     declare wait_proc="$!"
     wait "$wait_proc"
 

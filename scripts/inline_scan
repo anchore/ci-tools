@@ -4,7 +4,7 @@ set -eo pipefail
 
 # If using a locally built stateless CI container, export ANCHORE_CI_IMAGE=<image_name>. 
 # This will override the image name from Dockerhub.
-inline_scan_image="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:v0.3.3}"
+INLINE_SCAN_IMAGE="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:v0.3.3}"
 
 display_usage() {
 cat << EOF
@@ -78,13 +78,13 @@ trap 'interupt' SIGINT
 while getopts ':d:b:v:t:fhrp' option; do
   case "$option" in
     h  ) display_usage; exit;;
-    d  ) d_flag=true; dockerfile="$OPTARG";;
+    d  ) d_flag=true; DOCKERFILE="$OPTARG";;
     f  ) f_flag=true;;
     r  ) r_flag=true;;
-    b  ) b_flag=true; policy_bundle="$OPTARG";;
+    b  ) b_flag=true; POLICY_BUNDLE="$OPTARG";;
     p  ) p_flag=true;;
-    t  ) t_flag=true; timeout="$OPTARG";;
-    v  ) v_flag=true; volume_path="$(cd "$(dirname "$OPTARG")"; pwd -P)/$(basename "$OPTARG")";;
+    t  ) t_flag=true; TIMEOUT="$OPTARG";;
+    v  ) v_flag=true; VOLUME_PATH="$(cd "$(dirname "$OPTARG")"; pwd -P)/$(basename "$OPTARG")";;
     \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
     :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
   esac
@@ -104,25 +104,25 @@ elif [[ "$r_flag" ]] && ! (mkdir -p ./anchore-reports); then
     printf '\n\t%s\n\n' "ERROR - ${PWD}/anchore-reports is not writable." >&2
     display_usage >&2
     exit 1
-elif [[ "$b_flag" ]] && [[ ! -f "$policy_bundle" ]]; then
-    printf '\n\t%s\n\n' "ERROR - Policy Bundle: $policy_bundle does not exist." >&2
+elif [[ "$b_flag" ]] && [[ ! -f "$POLICY_BUNDLE" ]]; then
+    printf '\n\t%s\n\n' "ERROR - Policy Bundle: $POLICY_BUNDLE does not exist." >&2
     display_usage >&2
     exit 1
-elif [[ "$d_flag" ]] && [[ ! -f "$dockerfile" ]]; then
-    printf '\n\t%s\n\n' "ERROR - Dockerfile: $dockerfile does not exist." >&2
+elif [[ "$d_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
+    printf '\n\t%s\n\n' "ERROR - Dockerfile: $DOCKERFILE does not exist." >&2
     display_usage >&2
     exit 1
 elif [[ ! "v_flag" ]] && [[ "${#@}" -eq 0 ]]; then
     printf '\n\t%s\n\n' "ERROR - ${0##*/} requires at least 1 image name as input, unless utilizing -v option." >&2
     display_usage >&2
     exit 1
-elif [[ "$v_flag" ]] && [[ ! -d "$volume_path" ]]; then
-    printf '\n\t%s\n\n' "ERROR - $volume_path is not a directory." >&2
+elif [[ "$v_flag" ]] && [[ ! -d "$VOLUME_PATH" ]]; then
+    printf '\n\t%s\n\n' "ERROR - $VOLUME_PATH is not a directory." >&2
     exit 1
 elif [[ "$v_flag" ]] && [[ "$d_flag" ]]; then
     printf '\n\t%s\n\n' "ERROR - cannot specify image volume & Dockerfile. Dockerfile option only supports scanning one image at time." >&2
     exit 1
-elif [[ "$t_flag" ]] && [[ ! "$timeout" =~ ^[0-9]+$ ]]; then
+elif [[ "$t_flag" ]] && [[ ! "$TIMEOUT" =~ ^[0-9]+$ ]]; then
     printf '\n\t%s\n\n' "ERROR - timeout must be set to a valid integer." >&2
     display_usage >&2
     exit 1
@@ -133,6 +133,7 @@ failed_images=()
 scan_images=()
 image_files=()
 
+# Add all unique positional input params to image_names array
 for i in "$@"; do
     if [[ ! "${image_names[@]}" =~ "$i" ]]; then
         image_names+=("$i")
@@ -146,6 +147,7 @@ if [[ "$p_flag" ]]; then
     done
 fi
 
+# Make sure all images are available locally
 for i in "${image_names[@]}"; do
     docker inspect "$i" &> /dev/null || failed_images+=("$i")
 
@@ -169,25 +171,23 @@ if [[ "${#failed_images[@]}" -gt 0 ]]; then
     echo
 fi
 
+# Check if env var is overriding what inline-scan image to use.
 if [[ -z "$ANCHORE_CI_IMAGE" ]]; then
-    printf '\n%s\n' "Pulling $inline_scan_image"
-    docker pull "$inline_scan_image"
+    printf '\n%s\n' "Pulling $INLINE_SCAN_IMAGE"
+    docker pull "$INLINE_SCAN_IMAGE"
 else
-    printf '\n%s\n' "Using local image for scanning -- $inline_scan_image"
+    printf '\n%s\n' "Using local image for scanning -- $INLINE_SCAN_IMAGE"
 fi
 
+copy_cmds=()
+create_cmd=()
+run_cmd=("docker run -i --name $docker_name $INLINE_SCAN_IMAGE")
 docker_name="${RANDOM:-TEMP}-inline-anchore-engine"
 
-copy_cmds=()
-run_cmd=()
-create_cmd=()
-
-run_cmd=("docker run -i --name $docker_name $inline_scan_image")
-
 if [[ "$v_flag" ]]; then
-    create_cmd=('docker create -v "${volume_path}:/anchore-engine:rw" --name "$docker_name" "$inline_scan_image"')
+    create_cmd=('docker create -v "${VOLUME_PATH}:/anchore-engine:rw" --name "$docker_name" "$INLINE_SCAN_IMAGE"')
 else
-    create_cmd=('docker create --name "$docker_name" "$inline_scan_image"')
+    create_cmd=('docker create --name "$docker_name" "$INLINE_SCAN_IMAGE"')
 fi
 
 if [[ "$f_flag" ]]; then
@@ -201,23 +201,24 @@ if [[ "$r_flag" ]]; then
 fi
 
 if [[ "$t_flag" ]]; then
-    create_cmd+=('-t "$timeout"')
-    run_cmd+=('-t "$timeout"')
+    create_cmd+=('-t "$TIMEOUT"')
+    run_cmd+=('-t "$TIMEOUT"')
 fi
 
+# If no files need to be copied to container, pipe docker save output to stdin of docker run command.
 if [[ ! "$d_flag" ]] && [[ ! "$v_flag" ]] && [[ ! "$b_flag" ]] && [[ "${#scan_images[@]}" -eq 1 ]]; then
     printf '\n%s\n' "Preparing image for analysis -- ${scan_images[*]}"
     run_cmd+=('-i "${scan_images[*]}"')
     docker save "$i" | eval "${run_cmd[*]}"
 else
     if [[ "$b_flag" ]]; then
-        create_cmd+=('-b "$policy_bundle"')
-        copy_cmds+=('docker cp "$policy_bundle" "${docker_name}:/anchore-engine/$(basename $policy_bundle)";')
+        create_cmd+=('-b "$POLICY_BUNDLE"')
+        copy_cmds+=('docker cp "$POLICY_BUNDLE" "${docker_name}:/anchore-engine/$(basename $POLICY_BUNDLE)";')
     fi
     
     if [[ "$d_flag" ]]; then
-        create_cmd+=('-d "$dockerfile" -i "${scan_images[*]}"')
-        copy_cmds+=('docker cp "$dockerfile" "${docker_name}:/anchore-engine/$(basename $dockerfile)";')
+        create_cmd+=('-d "$DOCKERFILE" -i "${scan_images[*]}"')
+        copy_cmds+=('docker cp "$DOCKERFILE" "${docker_name}:/anchore-engine/$(basename $DOCKERFILE)";')
     fi
 
     docker_id=$(eval "${create_cmd[*]}")
@@ -225,13 +226,18 @@ else
     echo
     for image in "${scan_images[@]}"; do
         echo "Preparing image for analysis -- $image"
-        repo=$(basename "${image%:*}")
-        tag="${image#*:}"
+        if [[ $(basename $image) =~ [:]{1} ]]; then
+            repo=$(basename "${image%:*}")
+            tag="${image##*:}"
+        else
+            repo=$(basename "$image")
+            tag="latest"
+        fi
         file_name="${repo}+${tag}.tar" 
         image_files+=("$file_name")
         
         if [[ "$v_flag" ]]; then
-            output_file="${volume_path}/${file_name}"
+            output_file="${VOLUME_PATH}/${file_name}"
         else
             output_file="/tmp/${file_name}"
         fi
