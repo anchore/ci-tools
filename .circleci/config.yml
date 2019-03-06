@@ -199,8 +199,9 @@ jobs:
     - run:
         name: Test script
         command: |
+          export CI_TOOLS_VERSION=$(cat ci_tools_version.txt)
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:ci"
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -xs -- -r -p nginx:latest alpine:latest centos:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CI_TOOLS_VERSION}/scripts/inline_scan" | bash -xs -- -r -p nginx alpine:latest centos:latest
     - run:
         name: Push to Dockerhub
         command: |
@@ -268,7 +269,7 @@ workflows:
     - test_inline_script:
         requires:
           - nightly_build_stateless_image
-    - push_stateless_latest:
-        context: dockerhub
-        requires:
-          - test_inline_script
+    # - push_stateless_latest:
+    #     context: dockerhub
+    #     requires:
+    #       - test_inline_script

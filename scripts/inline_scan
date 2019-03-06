@@ -206,9 +206,15 @@ fi
 
 # If no files need to be copied to container, pipe docker save output to stdin of docker run command.
 if [[ ! "$d_flag" ]] && [[ ! "$v_flag" ]] && [[ ! "$b_flag" ]] && [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
-    printf '\n%s\n' "Preparing ${SCAN_IMAGES[*]} for analysis..."
+    printf '\n%s' "Preparing ${SCAN_IMAGES[*]} for analysis... "
     RUN_CMD+=('-i "${SCAN_IMAGES[*]}"')
-    docker save "${SCAN_IMAGES[*]}" | eval "${RUN_CMD[*]}"
+
+    # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
+    if [[ ! "${SCAN_IMAGES[*]}" =~ [:]+ ]]; then
+        docker save "${SCAN_IMAGES[*]}:latest" | eval "${RUN_CMD[*]}"
+    else
+        docker save "${SCAN_IMAGES[*]}" | eval "${RUN_CMD[*]}"
+    fi
 else
     # Prepare commands for container creation & copying all files to container.
     if [[ "$b_flag" ]]; then
@@ -245,7 +251,13 @@ else
             save_file_path="/tmp/${save_file_name}"
         fi
 
-        docker save "$image" -o "$save_file_path"
+        # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
+        if [[ ! "$image" =~ [:]+ ]]; then
+            docker save "${image}:latest" -o "$save_file_path"
+        else
+            docker save "$image" -o "$save_file_path"
+        fi
+
         printf '%s' "Successfully prepared image archive -- $save_file_path"
         if [[ ! -f "$save_file_path" ]]; then
             printf '\n\t%s\n\n' "ERROR - unable to save docker image to $save_file_path." >&2

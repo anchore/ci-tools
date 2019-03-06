@@ -74,6 +74,26 @@ elif [[ "$t_flag" ]] && [[ ! "$TIMEOUT" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
+if [[ ! "$t_flag" ]]; then
+        TIMEOUT=300
+fi
+
+if [[ "$i_flag" ]]; then
+    if [[ "$IMAGE_NAME" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
+        FILE_NAME="/anchore-engine/${BASH_REMATCH[2]}+${BASH_REMATCH[3]:-latest}.tar"
+        if [[ ! -f "$FILE_NAME" ]]; then
+            cat <&0 > "$FILE_NAME"
+            printf '%s\n' "Successfully prepared image archive -- $FILE_NAME"
+        fi
+    elif [[ -f "/anchore-engine/$(basename ${IMAGE_NAME})" ]]; then
+        FILE_NAME="/anchore-engine/$(basename ${IMAGE_NAME})"
+    else
+        printf '\n\t%s\n\n' "ERROR - Could not find image file $IMAGE_NAME" >&2
+        display_usage >&2
+        exit 1
+    fi
+fi
+
 main() {
     if [[ "${#@}" -ne 0 ]]; then
         # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
@@ -85,25 +105,6 @@ main() {
             start_services "exec"
         else
             exec "$@"
-        fi
-    fi
-
-    if [[ ! "$t_flag" ]]; then
-        TIMEOUT=300
-    fi
-
-    if [[ "$i_flag" ]]; then
-        if [[ "$IMAGE_NAME" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
-            FILE_NAME="/anchore-engine/${BASH_REMATCH[2]}+${BASH_REMATCH[3]:-latest}.tar"
-            if [[ ! -f "$FILE_NAME" ]]; then
-                cat <&0 > "$FILE_NAME"
-            fi
-        elif [[ -f "/anchore-engine/$(basename ${IMAGE_NAME})" ]]; then
-            FILE_NAME="/anchore-engine/$(basename ${IMAGE_NAME})"
-        else
-            printf '\n\t%s\n\n' "ERROR - Could not find image file $IMAGE_NAME" >&2
-            display_usage >&2
-            exit 1
         fi
     fi
     
@@ -120,7 +121,7 @@ main() {
 
     printf '%s\n\n' "Searching for Docker archive files in /anchore-engine."
     if [[ "$FILE_NAME" ]]; then
-        if [[ $(skopeo inspect "docker-archive:${FILE_NAME}" 2> /dev/null) ]]; then 
+        if [[ $(skopeo inspect "docker-archive:${FILE_NAME}") ]]; then 
             SCAN_FILES+=("$FILE_NAME")
             printf '\t%s\n' "Found Docker image archive:  $FILE_NAME"
         else 
@@ -250,9 +251,9 @@ anchore_analysis() {
 
     echo
     if [[ "$d_flag" ]] && [[ -f "$DOCKERFILE" ]]; then
-        anchore-cli image add "$anchore_image_name" --dockerfile "$DOCKERFILE"
+        anchore-cli image add "$anchore_image_name" --dockerfile "$DOCKERFILE" > /dev/null
     else
-        anchore-cli image add "$anchore_image_name"
+        anchore-cli image add "$anchore_image_name" > /dev/null
     fi
 
     # pass to background process & wait, required to handle keyboard interrupt when running container non-interactively.
