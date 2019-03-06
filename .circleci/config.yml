@@ -98,23 +98,21 @@ jobs:
           echo "$CI_TOOLS_VERSION" > ci_tools_version.txt
           scripts/build_image.sh
     - pull_test_image:
-        image_names: "('alpine:latest' 'node:latest' 'anchore/anchore-engine:latest')"
+        image_names: "('alpine:latest' 'java:latest' 'anchore/inline-scan:latest')"
     - run:
         name: Test stateless container
         command: |
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:ci"
-          bash -x scripts/inline_scan -v ~/images
+          bash -x scripts/inline_scan -v ~/images -t 500
     - run:
         name: Test script
         command: |
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:ci"
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -xs -- -r -p nginx:latest alpine:latest centos:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -xs -- -p -r nginx
     - run:
         name: Push to Dockerhub
         command: |
           echo "${IMAGE_NAME}:${IMAGE_TAG}"
-          ANCHORE_VERSION=$(cat anchore_version.txt)
-          echo "$ANCHORE_VERSION"
           echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
           docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:${IMAGE_TAG}"
           docker push "${IMAGE_NAME}:${IMAGE_TAG}"
@@ -140,6 +138,11 @@ jobs:
     - run:
         name: Install dependencies
         command: apk add curl bash
+    - run:
+        name: test script dockerfile
+        command: |
+          export ANCHORE_CI_IMAGE="${IMAGE_NAME}:dev"
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -p centos:latest
     - run:
         name: test script dockerfile
         command: |
@@ -189,13 +192,13 @@ jobs:
           echo "ANCHORE_VERSION=$ANCHORE_VERSION"
           popd
           rm -rf anchore-engine
-          echo $ANCHORE_VERSION > anchore_version.txt
           git clone git@github.com:anchore/ci-tools.git .
           export CI_TOOLS_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
           echo "CI_TOOLS_VERSION=$CI_TOOLS_VERSION"
-          echo "$CI_TOOLS_VERSION" > ci_tools_version.txt
           git checkout "$CI_TOOLS_VERSION"
           scripts/build_image.sh
+          echo $ANCHORE_VERSION > anchore_version.txt
+          echo "$CI_TOOLS_VERSION" > ci_tools_version.txt
     - run:
         name: Test script
         command: |
@@ -210,7 +213,7 @@ jobs:
           docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:${IMAGE_TAG}"
           docker push "${IMAGE_NAME}:${IMAGE_TAG}"
     - run:
-        name: Save Docker image
+        name: Setup workspace cache
         command: |
           rm -rf /home/circleci/workspace/caches/
           mkdir -p /home/circleci/workspace/caches/
