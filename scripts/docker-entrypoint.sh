@@ -29,8 +29,10 @@ EOF
 error() {
     set +e
     printf '\n\n\t%s\n\n' "ERROR - $0 received SIGTERM or SIGINT" >&2
-    # kill anchore_ci_tools.py script while it's in a wait loop
-    pkill -f python3 &> /dev/null
+    # kill python process in wait loop
+    (pkill -f python3 &> /dev/null)
+    # kill skopeo process in wait loop
+    (pkill -f skopeo &> /dev/null)
     exit 130
 }
 
@@ -38,7 +40,7 @@ trap 'error' SIGINT
 
 # Parse options
 while getopts ':d:b:i:t:fhr' option; do
-  case "${option}" in
+case "${option}" in
     d  ) d_flag=true; DOCKERFILE="/anchore-engine/$(basename $OPTARG)";;
     b  ) b_flag=true; POLICY_BUNDLE="/anchore-engine/$(basename $OPTARG)";;
     i  ) i_flag=true; IMAGE_NAME="$OPTARG";;
@@ -48,7 +50,7 @@ while getopts ':d:b:i:t:fhr' option; do
     h  ) display_usage; exit;;
     \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
     :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
-  esac
+esac
 done
 
 shift "$((OPTIND - 1))"
@@ -72,28 +74,6 @@ elif [[ "$t_flag" ]] && [[ ! "$TIMEOUT" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-if [[ ! "$t_flag" ]]; then
-    TIMEOUT=300
-fi
-
-if [[ "$i_flag" ]]; then
-    if [[ "$IMAGE_NAME" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
-        FILE_NAME="/anchore-engine/${BASH_REMATCH[2]}+${BASH_REMATCH[3]:-latest}.tar"
-        if [[ ! -f "$FILE_NAME" ]]; then
-            cat <&0 > "$FILE_NAME"
-        fi
-    elif [[ -f "/anchore-engine/$(basename ${IMAGE_NAME})" ]]; then
-        FILE_NAME="/anchore-engine/$(basename ${IMAGE_NAME})"
-    else
-        printf '\n\t%s\n\n' "ERROR - Could not find image file at: $FILE_NAME" >&2
-        display_usage >&2
-        exit 1
-    fi
-fi
-
-scan_files=()
-finished_images=()
-
 main() {
     if [[ "${#@}" -ne 0 ]]; then
         # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
@@ -108,6 +88,25 @@ main() {
         fi
     fi
 
+    if [[ ! "$t_flag" ]]; then
+        TIMEOUT=300
+    fi
+
+    if [[ "$i_flag" ]]; then
+        if [[ "$IMAGE_NAME" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
+            FILE_NAME="/anchore-engine/${BASH_REMATCH[2]}+${BASH_REMATCH[3]:-latest}.tar"
+            if [[ ! -f "$FILE_NAME" ]]; then
+                cat <&0 > "$FILE_NAME"
+            fi
+        elif [[ -f "/anchore-engine/$(basename ${IMAGE_NAME})" ]]; then
+            FILE_NAME="/anchore-engine/$(basename ${IMAGE_NAME})"
+        else
+            printf '\n\t%s\n\n' "ERROR - Could not find image file $IMAGE_NAME" >&2
+            display_usage >&2
+            exit 1
+        fi
+    fi
+    
     start_services
 
     echo "Waiting for Anchore Engine to be available."
@@ -116,10 +115,33 @@ main() {
     declare wait_proc="$!"
     wait "$wait_proc"
     
-    prepare_images
+    SCAN_FILES=()
+    FINISHED_IMAGES=()
 
-    if [[ "${#scan_files[@]}" -gt 0 ]]; then
-        for file in "${scan_files[@]}"; do
+    printf '%s\n\n' "Searching for Docker archive files in /anchore-engine."
+    if [[ "$FILE_NAME" ]]; then
+        if [[ $(skopeo inspect "docker-archive:${FILE_NAME}" 2> /dev/null) ]]; then 
+            SCAN_FILES+=("$FILE_NAME")
+            printf '\t%s\n' "Found Docker image archive:  $FILE_NAME"
+        else 
+            printf '\n\t%s\n\n' "ERROR - Invalid Docker image archive:  $FILE_NAME" >&2
+            display_usage >&2
+            exit 1
+        fi
+    else
+        for i in $(find /anchore-engine -type f); do
+            if [[ $(skopeo inspect "docker-archive:${i}" 2> /dev/null) ]] && [[ ! "${SCAN_FILES[@]}" =~ "$i" ]]; then 
+                SCAN_FILES+=("$i")
+                printf '\t%s\n' "Found docker archive:  $i"
+            else 
+                printf '\t%s\n' "Ignoring invalid docker archive:  $i" >&2
+            fi
+        done
+    fi
+    echo
+
+    if [[ "${#SCAN_FILES[@]}" -gt 0 ]]; then
+        for file in "${SCAN_FILES[@]}"; do
             start_scan "$file"
         done
     else
@@ -133,21 +155,21 @@ main() {
             printf "\n%s\n" "Unable to activate policy bundle - $POLICY_BUNDLE -- using default policy bundle." >&2
     fi
     
-    if [[ "${#finished_images[@]}" -ge 1 ]]; then
+    if [[ "${#FINISHED_IMAGES[@]}" -ge 1 ]]; then
         if [[ "$r_flag" ]]; then
-            for image in "${finished_images[@]}"; do
+            for image in "${FINISHED_IMAGES[@]}"; do
                 anchore_ci_tools.py -r --image "$image"
             done
         fi
         echo
-        for image in "${finished_images[@]}"; do
-            printf '\n\t%s\n' "Policy Evaluation - ${image#*/}"
+        for image in "${FINISHED_IMAGES[@]}"; do
+            printf '\n\t%s\n' "Policy Evaluation - ${image##*/}"
             printf '%s\n\n' "---------------------------------------------------------------------------"
-            (set +o pipefail; anchore-cli evaluate check "$image" --detail | tee /dev/null)
+            (set +o pipefail; anchore-cli evaluate check "$image" --detail | tee /dev/null; set -o pipefail)
         done
 
         if [[ "$f_flag" ]]; then
-            for image in "${finished_images[@]}"; do
+            for image in "${FINISHED_IMAGES[@]}"; do
                 anchore-cli evaluate check "$image"
             done
         fi
@@ -175,7 +197,6 @@ start_services() {
     
     echo "Starting Postgresql."
     touch /var/log/postgres.log && chown postgres:postgres /var/log/postgres.log
-    # TODO - not sure if we actually need gosu - ubuntu may include su by default
     nohup gosu postgres bash -c 'postgres &> /var/log/postgres.log &' &> /dev/null
     sleep 3 && gosu postgres pg_isready -d postgres --quiet && echo "Postgresql started successfully!"
     
@@ -189,30 +210,6 @@ start_services() {
     fi
 }
 
-prepare_images() {
-    printf '%s\n\n' "Searching for Docker archive files in /anchore-engine."
-    if [[ "$FILE_NAME" ]]; then
-        if [[ $(skopeo inspect "docker-archive:${FILE_NAME}" 2> /dev/null) ]]; then 
-            scan_files+=("$FILE_NAME")
-            printf '\t%s\n' "Found Docker image archive:  $FILE_NAME"
-        else 
-            printf '\n\t%s\n\n' "ERROR - Invalid Docker image archive:  $FILE_NAME" >&2
-            display_usage >&2
-            exit 1
-        fi
-    else
-        for i in $(find /anchore-engine -type f); do
-            if [[ $(skopeo inspect "docker-archive:${i}" 2> /dev/null) ]] && [[ ! "${scan_files[@]}" =~ "$i" ]]; then 
-                scan_files+=("$i")
-                printf '\t%s\n' "Found docker archive:  $i"
-            else 
-                printf '\t%s\n' "Ignoring invalid docker archive:  $i" >&2
-            fi
-        done
-    fi
-    echo
-}
-
 start_scan() {
     declare file="$1"
     declare image_repo=""
@@ -224,20 +221,21 @@ start_scan() {
             image_repo=$(basename "${BASH_REMATCH[1]}")
             image_tag="${BASH_REMATCH[2]}"
         else
-            image_repo=$(basename "${file%.tar}")
+            image_repo=$(basename "${file%%.*}")
             image_tag="latest"
         fi
-    elif [[ $(basename $IMAGE_NAME) =~ [:]{1} ]]; then
-        image_repo=$(basename "${IMAGE_NAME%:*}")
-        image_tag="${IMAGE_NAME##*:}"
+    elif [[ "$IMAGE_NAME" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
+        image_repo="${BASH_REMATCH[2]}"
+        image_tag="${BASH_REMATCH[3]:-latest}"
     else
-        image_repo=$(basename "${IMAGE_NAME}")
-        image_tag="latest"
+        printf '\n\t%s\n\n' "ERROR - Could not parse image file name $IMAGE_NAME" >&2
+        display_usage >&2
+        exit 1
     fi
 
     anchore_image_name="${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"
     
-    printf '%s\n\n' "Adding image to Anchore Engine -- ${anchore_image_name#*/}"
+    printf '%s\n\n' "Image file loaded into Anchore Engine with tag -- ${anchore_image_name#*/}"
     anchore_analysis "$file" "$anchore_image_name"
 }
 
@@ -245,7 +243,11 @@ anchore_analysis() {
     declare file="$1"
     declare anchore_image_name="$2"
 
-    skopeo copy --dest-tls-verify=false "docker-archive:${file}" "docker://${anchore_image_name}"
+    # pass to background process & wait, required to handle keyboard interrupt when running container non-interactively.
+    skopeo copy --dest-tls-verify=false "docker-archive:${file}" "docker://${anchore_image_name}" &
+    declare wait_proc="$!"
+    wait $wait_proc
+
     echo
     if [[ "$d_flag" ]] && [[ -f "$DOCKERFILE" ]]; then
         anchore-cli image add "$anchore_image_name" --dockerfile "$DOCKERFILE"
@@ -253,12 +255,12 @@ anchore_analysis() {
         anchore-cli image add "$anchore_image_name"
     fi
 
-    # pass python script to background process & wait, required to handle keyboard interrupt when running container non-interactively.
+    # pass to background process & wait, required to handle keyboard interrupt when running container non-interactively.
     anchore_ci_tools.py --wait --timeout "$TIMEOUT" --image "$anchore_image_name" &
     declare wait_proc="$!"
     wait "$wait_proc"
 
-    finished_images+=("$anchore_image_name")
+    FINISHED_IMAGES+=("$anchore_image_name")
 }
 
 main "$@"

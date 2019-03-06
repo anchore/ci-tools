@@ -41,7 +41,7 @@ cleanup() {
     set +e
 
     if [[ -z "$docker_id" ]]; then
-        docker_id="${docker_name:-$(docker ps -a | grep 'inline-anchore-engine' | awk '{print $1}')}"
+        docker_id="${DOCKER_NAME:-$(docker ps -a | grep 'inline-anchore-engine' | awk '{print $1}')}"
     fi
 
     for id in $docker_id; do
@@ -60,8 +60,8 @@ cleanup() {
         unset docker_id
     done
     
-    if [[ "${#image_files[@]}" -ge 1 ]]; then
-        for file in "${image_files[@]}"; do
+    if [[ "${#IMAGE_FILES[@]}" -ge 1 ]]; then
+        for file in "${IMAGE_FILES[@]}"; do
             if [[ -f "$file" ]]; then
                 rm -f "/tmp/${file}"
             fi
@@ -84,7 +84,7 @@ while getopts ':d:b:v:t:fhrp' option; do
     b  ) b_flag=true; POLICY_BUNDLE="$OPTARG";;
     p  ) p_flag=true;;
     t  ) t_flag=true; TIMEOUT="$OPTARG";;
-    v  ) v_flag=true; VOLUME_PATH="$(cd "$(dirname "$OPTARG")"; pwd -P)/$(basename "$OPTARG")";;
+    v  ) v_flag=true; VOLUME_PATH="$(cd "$(dirname "$OPTARG")"; pwd -P)/$(basename "$OPTARG")";; # Get absolute path of file
     \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
     :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
   esac
@@ -92,6 +92,7 @@ done
 
 shift "$((OPTIND - 1))"
 
+# Check for invalid options
 if [[ ! $(which docker) ]]; then
     printf '\n\t%s\n\n' 'ERROR - Docker is not installed or cannot be found in $PATH.' >&2
     display_usage >&2
@@ -128,50 +129,47 @@ elif [[ "$t_flag" ]] && [[ ! "$TIMEOUT" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-image_names=()
-failed_images=()
-scan_images=()
-image_files=()
-
-# Add all unique positional input params to image_names array
+IMAGE_NAMES=()
+# Add all unique positional input params to IMAGE_NAMES array
 for i in "$@"; do
-    if [[ ! "${image_names[@]}" =~ "$i" ]]; then
-        image_names+=("$i")
+    if [[ ! "${IMAGE_NAMES[@]}" =~ "$i" ]]; then
+        IMAGE_NAMES+=("$i")
     fi
 done
 
-if [[ "$p_flag" ]]; then
-    for i in "${image_names[@]}"; do
+SCAN_IMAGES=()
+FAILED_IMAGES=()
+
+# Make sure all images are available locally, add to FAILED_IMAGES array if not
+for i in "${IMAGE_NAMES[@]}"; do
+    if [[ "$p_flag" ]]; then
         printf '\n%s\n' "Pulling image -- $i"
-        docker pull "$i"
-    done
-fi
+        docker pull $i || true
+    fi
 
-# Make sure all images are available locally
-for i in "${image_names[@]}"; do
-    docker inspect "$i" &> /dev/null || failed_images+=("$i")
+    docker inspect "$i" &> /dev/null || FAILED_IMAGES+=("$i")
 
-    if [[ ! "${failed_images[@]}" =~ "$i" ]]; then
-        scan_images+=("$i")
+    if [[ ! "${FAILED_IMAGES[@]}" =~ "$i" ]]; then
+        SCAN_IMAGES+=("$i")
     fi
 done
 
-if [[ "${#failed_images[@]}" -gt 0 ]]; then
-    printf '\n\t%s\n\n' "### Please pull remote image, or build/tag all local images before attempting analysis again. ###" >&2
+# Give error message on any invalid image names
+if [[ "${#FAILED_IMAGES[@]}" -gt 0 ]]; then
+    printf '\n%s\n\n' "### WARNING - Please pull remote image, or build/tag all local images before attempting analysis again. ###" >&2
 
-    if [[ "${#failed_images[@]}" -ge "${#image_names[@]}" ]]; then
-        printf '\n\t%s\n\n' "ERROR - no local docker images specified in script input: $0 ${image_names[*]}" >&2
+    if [[ "${#FAILED_IMAGES[@]}" -ge "${#IMAGE_NAMES[@]}" ]]; then
+        printf '\n\t%s\n\n' "ERROR - no local docker images specified in script input: ${0##*/} ${IMAGE_NAMES[*]}" >&2
         display_usage >&2
         exit 1
     fi
 
-    for i in "${failed_images[@]}"; do
-        printf '\t\t%s\n' "Could not find image locally - $i" >&2
+    for i in "${FAILED_IMAGES[@]}"; do
+        printf '\t%s\n' "Could not find image locally -- $i" >&2
     done
-    echo
 fi
 
-# Check if env var is overriding what inline-scan image to use.
+# Check if env var is overriding the inline-scan image to utilize.
 if [[ -z "$ANCHORE_CI_IMAGE" ]]; then
     printf '\n%s\n' "Pulling $INLINE_SCAN_IMAGE"
     docker pull "$INLINE_SCAN_IMAGE"
@@ -179,87 +177,92 @@ else
     printf '\n%s\n' "Using local image for scanning -- $INLINE_SCAN_IMAGE"
 fi
 
-copy_cmds=()
-create_cmd=()
-run_cmd=("docker run -i --name $docker_name $INLINE_SCAN_IMAGE")
-docker_name="${RANDOM:-TEMP}-inline-anchore-engine"
+COPY_CMDS=()
+CREATE_CMD=()
+DOCKER_NAME="${RANDOM:-TEMP}-inline-anchore-engine"
+RUN_CMD=("docker run -i --name $DOCKER_NAME $INLINE_SCAN_IMAGE")
 
 if [[ "$v_flag" ]]; then
-    create_cmd=('docker create -v "${VOLUME_PATH}:/anchore-engine:rw" --name "$docker_name" "$INLINE_SCAN_IMAGE"')
+    printf '\n%s\n' "Creating volume mount -- ${VOLUME_PATH}:/anchore-engine"
+    CREATE_CMD=('docker create -v "${VOLUME_PATH}:/anchore-engine:rw" --name "$DOCKER_NAME" "$INLINE_SCAN_IMAGE"')
 else
-    create_cmd=('docker create --name "$docker_name" "$INLINE_SCAN_IMAGE"')
+    CREATE_CMD=('docker create --name "$DOCKER_NAME" "$INLINE_SCAN_IMAGE"')
 fi
 
 if [[ "$f_flag" ]]; then
-    create_cmd+=('-f')
-    run_cmd+=('-f')
+    CREATE_CMD+=('-f')
+    RUN_CMD+=('-f')
 fi
 
 if [[ "$r_flag" ]]; then
-    create_cmd+=('-r')
-    run_cmd+=('-r')
+    CREATE_CMD+=('-r')
+    RUN_CMD+=('-r')
 fi
 
 if [[ "$t_flag" ]]; then
-    create_cmd+=('-t "$TIMEOUT"')
-    run_cmd+=('-t "$TIMEOUT"')
+    CREATE_CMD+=('-t "$TIMEOUT"')
+    RUN_CMD+=('-t "$TIMEOUT"')
 fi
 
 # If no files need to be copied to container, pipe docker save output to stdin of docker run command.
-if [[ ! "$d_flag" ]] && [[ ! "$v_flag" ]] && [[ ! "$b_flag" ]] && [[ "${#scan_images[@]}" -eq 1 ]]; then
-    printf '\n%s\n' "Preparing image for analysis -- ${scan_images[*]}"
-    run_cmd+=('-i "${scan_images[*]}"')
-    docker save "$i" | eval "${run_cmd[*]}"
+if [[ ! "$d_flag" ]] && [[ ! "$v_flag" ]] && [[ ! "$b_flag" ]] && [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
+    printf '\n%s\n' "Preparing ${SCAN_IMAGES[*]} for analysis..."
+    RUN_CMD+=('-i "${SCAN_IMAGES[*]}"')
+    docker save "${SCAN_IMAGES[*]}" | eval "${RUN_CMD[*]}"
 else
+    # Prepare commands for container creation & copying all files to container.
     if [[ "$b_flag" ]]; then
-        create_cmd+=('-b "$POLICY_BUNDLE"')
-        copy_cmds+=('docker cp "$POLICY_BUNDLE" "${docker_name}:/anchore-engine/$(basename $POLICY_BUNDLE)";')
+        CREATE_CMD+=('-b "$POLICY_BUNDLE"')
+        COPY_CMDS+=('docker cp "$POLICY_BUNDLE" "${DOCKER_NAME}:/anchore-engine/$(basename $POLICY_BUNDLE)";')
     fi
     
-    if [[ "$d_flag" ]]; then
-        create_cmd+=('-d "$DOCKERFILE" -i "${scan_images[*]}"')
-        copy_cmds+=('docker cp "$DOCKERFILE" "${docker_name}:/anchore-engine/$(basename $DOCKERFILE)";')
+    if [[ "$d_flag" ]] && [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
+        CREATE_CMD+=('-d "$DOCKERFILE" -i "${SCAN_IMAGES[*]}"')
+        COPY_CMDS+=('docker cp "$DOCKERFILE" "${DOCKER_NAME}:/anchore-engine/$(basename $DOCKERFILE)";')
     fi
 
-    docker_id=$(eval "${create_cmd[*]}")
-    eval "${copy_cmds[*]}"
-    echo
-    for image in "${scan_images[@]}"; do
-        echo "Preparing image for analysis -- $image"
-        if [[ $(basename $image) =~ [:]{1} ]]; then
-            repo=$(basename "${image%:*}")
-            tag="${image##*:}"
+    docker_id=$(eval "${CREATE_CMD[*]}")
+    eval "${COPY_CMDS[*]}"
+    
+    IMAGE_FILES=()
+    # Save all image files to /tmp and copy to created container
+    for image in "${SCAN_IMAGES[@]}"; do
+        base_image_name=$(basename "$image")
+        printf '\n%s' "Preparing $image for analysis... "
+        if [[ "$base_image_name" =~ [:]{1} ]]; then
+            repo="${base_image_name%:*}"
+            tag="${base_image_name#*:}"
         else
-            repo=$(basename "$image")
+            repo="$base_image_name"
             tag="latest"
         fi
-        file_name="${repo}+${tag}.tar" 
-        image_files+=("$file_name")
+        save_file_name="${repo}+${tag}.tar" 
+        IMAGE_FILES+=("$save_file_name")
         
         if [[ "$v_flag" ]]; then
-            output_file="${VOLUME_PATH}/${file_name}"
+            save_file_path="${VOLUME_PATH}/${save_file_name}"
         else
-            output_file="/tmp/${file_name}"
+            save_file_path="/tmp/${save_file_name}"
         fi
 
-        docker save "$image" -o "$output_file"
-
-        if [[ ! -f "$output_file" ]]; then
-            printf '\n\t%s\n\n' "ERROR - unable to save docker image to $output_file." >&2
+        docker save "$image" -o "$save_file_path"
+        printf '%s' "Successfully prepared image file -- $save_file_path"
+        if [[ ! -f "$save_file_path" ]]; then
+            printf '\n\t%s\n\n' "ERROR - unable to save docker image to $save_file_path." >&2
             display_usage >&2
             exit 1
         fi
 
         if [[ ! "$v_flag" ]]; then
-            docker cp "$output_file" "${docker_name}:/anchore-engine/${file_name}"
-            rm -f "$output_file"
+            docker cp "$save_file_path" "${DOCKER_NAME}:/anchore-engine/${save_file_name}"
+            rm -f "$save_file_path"
         fi
     done
-
-    docker start -ia "$docker_name"
+    echo
+    docker start -ia "$DOCKER_NAME"
 fi
 
 if [[ "$r_flag" ]]; then
-    echo "Copying analysis reports from ${docker_name} to ${PWD}/anchore-reports/"
-    docker cp "${docker_name}:/anchore-engine/anchore-reports/" ./
+    echo "Copying analysis reports from ${DOCKER_NAME} to ${PWD}/anchore-reports/"
+    docker cp "${DOCKER_NAME}:/anchore-engine/anchore-reports/" ./
 fi
