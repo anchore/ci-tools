@@ -246,7 +246,7 @@ else
         fi
 
         docker save "$image" -o "$save_file_path"
-        printf '%s' "Successfully prepared image file -- $save_file_path"
+        printf '%s' "Successfully prepared image archive -- $save_file_path"
         if [[ ! -f "$save_file_path" ]]; then
             printf '\n\t%s\n\n' "ERROR - unable to save docker image to $save_file_path." >&2
             display_usage >&2

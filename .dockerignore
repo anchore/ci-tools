@@ -1,4 +1,5 @@
 .circleci
 .vscode
 .gitignore
+.git
 test/

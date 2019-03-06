@@ -40,17 +40,17 @@ trap 'error' SIGINT
 
 # Parse options
 while getopts ':d:b:i:t:fhr' option; do
-case "${option}" in
-    d  ) d_flag=true; DOCKERFILE="/anchore-engine/$(basename $OPTARG)";;
-    b  ) b_flag=true; POLICY_BUNDLE="/anchore-engine/$(basename $OPTARG)";;
-    i  ) i_flag=true; IMAGE_NAME="$OPTARG";;
-    f  ) f_flag=true;;
-    r  ) r_flag=true;;
-    t  ) t_flag=true; TIMEOUT="$OPTARG";;
-    h  ) display_usage; exit;;
-    \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
-    :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
-esac
+    case "${option}" in
+        d  ) d_flag=true; DOCKERFILE="/anchore-engine/$(basename $OPTARG)";;
+        b  ) b_flag=true; POLICY_BUNDLE="/anchore-engine/$(basename $OPTARG)";;
+        i  ) i_flag=true; IMAGE_NAME="$OPTARG";;
+        f  ) f_flag=true;;
+        r  ) r_flag=true;;
+        t  ) t_flag=true; TIMEOUT="$OPTARG";;
+        h  ) display_usage; exit;;
+        \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
+        :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
+    esac
 done
 
 shift "$((OPTIND - 1))"
@@ -164,7 +164,7 @@ main() {
         echo
         for image in "${FINISHED_IMAGES[@]}"; do
             printf '\n\t%s\n' "Policy Evaluation - ${image##*/}"
-            printf '%s\n\n' "---------------------------------------------------------------------------"
+            printf '%s\n\n' "-----------------------------------------------------------"
             (set +o pipefail; anchore-cli evaluate check "$image" --detail | tee /dev/null; set -o pipefail)
         done
 
@@ -235,7 +235,7 @@ start_scan() {
 
     anchore_image_name="${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"
     
-    printf '%s\n\n' "Image file loaded into Anchore Engine with tag -- ${anchore_image_name#*/}"
+    printf '%s\n\n' "Image archive loaded into Anchore Engine using tag -- ${anchore_image_name#*/}"
     anchore_analysis "$file" "$anchore_image_name"
 }
 
