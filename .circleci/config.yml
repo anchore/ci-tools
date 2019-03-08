@@ -137,12 +137,12 @@ jobs:
         name: Install dependencies
         command: apk add curl bash
     - run:
-        name: test script dockerfile
+        name: test script
         command: |
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:dev"
           curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -p centos:latest
     - run:
-        name: test script dockerfile
+        name: test script with dockerfile
         command: |
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:dev"
           docker pull docker:stable-git
@@ -156,9 +156,9 @@ jobs:
         name: test script with policy bundle & dockerfile
         command: |
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:dev"
-          pushd .circleci/node_critical_pass/
+          cd .circleci/node_critical_pass/
           docker build -t example.com:5000/ci-test_1/node_critical-pass:latest .
-          popd
+          cd -
           curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -t 500 -d ".circleci/node_critical_pass/Dockerfile" -b ".circleci/.anchore/policy_bundle.json" example.com:5000/ci-test_1/node_critical-pass
     
   push_stateless_latest:
