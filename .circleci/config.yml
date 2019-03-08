@@ -212,7 +212,18 @@ jobs:
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:ci"
           export CI_TOOLS_VERSION=$(cat ci_tools_version.txt)
           curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CI_TOOLS_VERSION}/scripts/inline_scan" | bash -xs -- -d ".circleci/Dockerfile" -b ".circleci/.anchore/policy_bundle.json" -p -r node
-
+    - run:
+        name: Setup workspace cache
+        command: |
+          rm -rf /home/circleci/workspace/caches/
+          mkdir -p /home/circleci/workspace/caches/
+          cp anchore_version.txt /home/circleci/workspace/caches/
+          cp ci_tools_version.txt /home/circleci/workspace/caches/
+          docker save -o "/home/circleci/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar" "${IMAGE_NAME}:ci"
+    - persist_to_workspace:
+        root: /home/circleci/workspace/
+        paths:
+          - caches/*
 
 workflows:
   scan_image:
