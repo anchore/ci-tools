@@ -80,7 +80,7 @@ jobs:
         command: circleci orb publish circleci-orbs/anchore-engine/orb.yml anchore/anchore-engine@dev:latest --token "$CIRCLECI_TOKEN"
 
   build_stateless_image:
-    machine: true      
+    machine: true
     steps:
     - checkout
     - run:
@@ -89,16 +89,14 @@ jobs:
           git clone git@github.com:anchore/anchore-engine.git
           pushd anchore-engine
           export ANCHORE_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
-          echo "ANCHORE_VERSION=$ANCHORE_VERSION"
           popd
           rm -rf anchore-engine
-          echo $ANCHORE_VERSION > anchore_version.txt
+          echo "ANCHORE_VERSION=$ANCHORE_VERSION" | tee >(sed 's/.*=//' > anchore_version.txt) | cat
           export CI_TOOLS_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
-          echo "CI_TOOLS_VERSION=$CI_TOOLS_VERSION"
-          echo "$CI_TOOLS_VERSION" > ci_tools_version.txt
+          echo "CI_TOOLS_VERSION=$CI_TOOLS_VERSION" | tee >(sed 's/.*=//' > ci_tools_version.txt) | cat
           scripts/build_image.sh
     - pull_test_image:
-        image_names: "('alpine:latest' 'java:latest' 'anchore/inline-scan:latest')"
+        image_names: "('alpine:latest' 'java:latest' 'nginx:latest')"
     - run:
         name: Test stateless container
         command: |
@@ -108,7 +106,7 @@ jobs:
         name: Test script
         command: |
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:ci"
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -xs -- -p -r nginx
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -xs -- -d ".circleci/Dockerfile" -b ".circleci/.anchore/policy_bundle.json" -p -r node
     - run:
         name: Push to Dockerhub
         command: |
@@ -117,7 +115,7 @@ jobs:
           docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:${IMAGE_TAG}"
           docker push "${IMAGE_NAME}:${IMAGE_TAG}"
     - run:
-        name: Save Docker image
+        name: Setup workspace cache
         command: |
           rm -rf /home/circleci/workspace/caches/
           mkdir -p /home/circleci/workspace/caches/
@@ -146,21 +144,21 @@ jobs:
     - run:
         name: test script dockerfile
         command: |
-          docker pull docker
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:dev"
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -d".circleci/Dockerfile" docker
+          docker pull docker:stable-git
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -d ".circleci/Dockerfile" docker:stable-git
     - run:
         name: test script with policy bundle
         command: |
-          docker pull docker.io/anchore/anchore-engine:latest
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:dev"
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -b".circleci/.anchore/policy_bundle.json" docker.io/anchore/anchore-engine:latest
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -p -b ".circleci/.anchore/policy_bundle.json" 'anchore/inline-scan:dev' 
     - run:
         name: test script with policy bundle & dockerfile
         command: |
-          docker pull node:latest
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:dev"
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -d".circleci/node_critical_pass/Dockerfile" -b".circleci/.anchore/policy_bundle.json" node:latest
+          cd .circleci/node_critical_pass/
+          docker build -t example.com:5000/ci-test_1/node_critical-pass:latest .
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CIRCLE_BRANCH}/scripts/inline_scan" | bash -s -- -t 500 -d ".circleci/node_critical_pass/Dockerfile" -b ".circleci/.anchore/policy_bundle.json" example.com:5000/ci-test_1/node_critical-pass
     
   push_stateless_latest:
     docker:
@@ -172,15 +170,19 @@ jobs:
     - run:
         name: Push 'latest' tag
         command: | 
-          echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-          CI_TOOLS_VERSION=$(cat /home/circleci/workspace/caches/ci_tools_version.txt)
-          docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:${CI_TOOLS_VERSION}"
-          docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:latest"
-          docker push "${IMAGE_NAME}:latest"
-          docker push "${IMAGE_NAME}:${CI_TOOLS_VERSION}"
+          if [[ "$CIRCLE_BRANCH" = 'master' ]]; then
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            CI_TOOLS_VERSION=$(cat /home/circleci/workspace/caches/ci_tools_version.txt)
+            docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:${CI_TOOLS_VERSION}"
+            docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:latest"
+            docker push "${IMAGE_NAME}:latest"
+            docker push "${IMAGE_NAME}:${CI_TOOLS_VERSION}"
+          else
+            echo "Only push lastest & $CI_TOOLS_VERSION tags on master."
+          fi
 
   nightly_build_stateless_image:
-    machine: true      
+    machine: true 
     steps:
     - checkout
     - run:
@@ -189,50 +191,42 @@ jobs:
           git clone git@github.com:anchore/anchore-engine.git
           pushd anchore-engine
           export ANCHORE_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
-          echo "ANCHORE_VERSION=$ANCHORE_VERSION"
           popd
           rm -rf anchore-engine
-          git clone git@github.com:anchore/ci-tools.git .
+          echo "ANCHORE_VERSION=$ANCHORE_VERSION" | tee >(sed 's/.*=//' > anchore_version.txt) | cat
           export CI_TOOLS_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
-          echo "CI_TOOLS_VERSION=$CI_TOOLS_VERSION"
+          echo "CI_TOOLS_VERSION=$CI_TOOLS_VERSION" | tee >(sed 's/.*=//' > ci_tools_version.txt) | cat
           git checkout "$CI_TOOLS_VERSION"
           scripts/build_image.sh
-          echo $ANCHORE_VERSION > anchore_version.txt
-          echo "$CI_TOOLS_VERSION" > ci_tools_version.txt
+    - pull_test_image:
+        image_names: "('alpine:latest' 'java:latest' 'anchore/inline-scan:latest' 'centos:latest' 'nginx:latest')"
+    - run:
+        name: Test stateless container
+        command: |
+          export ANCHORE_CI_IMAGE="${IMAGE_NAME}:ci"
+          bash -x scripts/inline_scan -v ~/images -t 500
     - run:
         name: Test script
         command: |
-          export CI_TOOLS_VERSION=$(cat ci_tools_version.txt)
           export ANCHORE_CI_IMAGE="${IMAGE_NAME}:ci"
-          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CI_TOOLS_VERSION}/scripts/inline_scan" | bash -xs -- -r -p nginx alpine:latest centos:latest
-    - run:
-        name: Push to Dockerhub
-        command: |
-          echo "${IMAGE_NAME}:${IMAGE_TAG}"
-          echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-          docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:${IMAGE_TAG}"
-          docker push "${IMAGE_NAME}:${IMAGE_TAG}"
-    - run:
-        name: Setup workspace cache
-        command: |
-          rm -rf /home/circleci/workspace/caches/
-          mkdir -p /home/circleci/workspace/caches/
-          cp anchore_version.txt /home/circleci/workspace/caches/
-          cp ci_tools_version.txt /home/circleci/workspace/caches/
-          docker save -o "/home/circleci/workspace/caches/${CIRCLE_PROJECT_REPONAME}-ci.tar" "${IMAGE_NAME}:ci"
-    - persist_to_workspace:
-        root: /home/circleci/workspace/
-        paths:
-          - caches/*
+          export CI_TOOLS_VERSION=$(cat ci_tools_version.txt)
+          curl -s "https://raw.githubusercontent.com/anchore/ci-tools/${CI_TOOLS_VERSION}/scripts/inline_scan" | bash -xs -- -d ".circleci/Dockerfile" -b ".circleci/.anchore/policy_bundle.json" -p -r node
+
 
 workflows:
   scan_image:
     jobs:
     - build_stateless_image:
         context: dockerhub
+        filters:
+          tags:
+            only: /^v.*/
     - test_inline_script:
         requires:
           - build_stateless_image
+        filters:
+          tags:
+            only: /^v.*/
     - push_stateless_latest:
         requires:
           - test_inline_script
@@ -269,10 +263,7 @@ workflows:
     jobs:
     - nightly_build_stateless_image:
         context: dockerhub
-    - test_inline_script:
+    - push_stateless_latest:
+        context: dockerhub
         requires:
           - nightly_build_stateless_image
-    # - push_stateless_latest:
-    #     context: dockerhub
-    #     requires:
-    #       - test_inline_script
