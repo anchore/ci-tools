@@ -228,6 +228,13 @@ jobs:
 workflows:
   scan_image:
     jobs:
+    - anchore/image_scan:
+        image_name: 'gcr.io/testing-214322/alpine-test'
+        private_registry: true
+        registry_name: gcr.io
+        registry_user: "_json_key"
+        registry_pass: "$_gcr_json_key"
+
     - build_stateless_image:
         context: dockerhub
         filters:
