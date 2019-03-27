@@ -106,7 +106,7 @@ commands:
     steps:
       - run:
           name: Add private registry credentials to anchore engine.
-          command: anchore-cli registry add "<< parameters.registry_name >>" "<< parameters.registry_user >>" "<< parameters.registry_pass >>" --skip-validate
+          command: anchore-cli registry add << parameters.registry_name >> "<< parameters.registry_user >>" "<< parameters.registry_pass >>" --skip-validate
 
   analyze_local_image:
     description: |
@@ -185,7 +185,7 @@ commands:
       - run:
           name: Install anchore tools
           command: |
-            curl -o /tmp/anchore_ci_tools.py https://raw.githubusercontent.com/anchore/ci-tools/v0.3.2/scripts/anchore_ci_tools.py
+            curl -o /tmp/anchore_ci_tools.py "https://raw.githubusercontent.com/anchore/ci-tools/${ANCHORE_VERSION}/scripts/anchore_ci_tools.py"
             chmod +x /tmp/anchore_ci_tools.py
             pyenv global 3.6.5
             pip install --upgrade pip
@@ -239,11 +239,6 @@ commands:
     description: |
       Setup anchore-engine using docker compose and default configuration.
       Must be run on executor with anchore_ci_tools.py, anchorecli & docker-compose installed.
-    parameters:
-      anchore_engine_version:
-        description: Version of anchore engine container.
-        type: string
-        default: "v0.3.2"
     steps:
       - run:
           name: Create anchore engine configuration files.
@@ -257,7 +252,7 @@ commands:
             services:
               # The primary API endpoint service
               engine-api:
-                image: anchore/anchore-engine:<< parameters.anchore_engine_version >>
+                image: anchore/anchore-engine:ANCHORE_VERSION
                 depends_on:
                 - anchore-db
                 - engine-catalog
@@ -275,7 +270,7 @@ commands:
 
               # Catalog is the primary persistence and state manager of the system
               engine-catalog:
-                image: anchore/anchore-engine:<< parameters.anchore_engine_version >>
+                image: anchore/anchore-engine:ANCHORE_VERSION
                 depends_on:
                 - anchore-db
                 logging:
@@ -290,7 +285,7 @@ commands:
                 - ANCHORE_DB_PASSWORD=mysecretpassword
                 command: ["anchore-manager", "service", "start", "catalog"]
               engine-simpleq:
-                image: anchore/anchore-engine:<< parameters.anchore_engine_version >>
+                image: anchore/anchore-engine:ANCHORE_VERSION
                 depends_on:
                 - anchore-db
                 - engine-catalog
@@ -306,7 +301,7 @@ commands:
                 - ANCHORE_DB_PASSWORD=mysecretpassword
                 command: ["anchore-manager", "service", "start", "simplequeue"]
               engine-policy-engine:
-                image: anchore/anchore-engine:<< parameters.anchore_engine_version >>
+                image: anchore/anchore-engine:ANCHORE_VERSION
                 depends_on:
                 - anchore-db
                 - engine-catalog
@@ -322,7 +317,7 @@ commands:
                 - ANCHORE_DB_PASSWORD=mysecretpassword
                 command: ["anchore-manager", "service", "start", "policy_engine"]
               engine-analyzer:
-                image: anchore/anchore-engine:<< parameters.anchore_engine_version >>
+                image: anchore/anchore-engine:ANCHORE_VERSION
                 depends_on:
                 - anchore-db
                 - engine-catalog
@@ -340,7 +335,7 @@ commands:
                 - anchore-scratch:/analysis_scratch
                 command: ["anchore-manager", "service", "start", "analyzer"]
               anchore-db:
-                image: anchore/engine-db-preload:<< parameters.anchore_engine_version >>
+                image: anchore/engine-db-preload:ANCHORE_VERSION
                 volumes:
                 - anchore-db-volume:/var/lib/postgresql/data
                 environment:
@@ -352,6 +347,7 @@ commands:
                   options:
                     max-size: 100m
             EOF
+            sed -i "s/ANCHORE_VERSION/$ANCHORE_VERSION/g" docker-compose.yaml
 
       - run:
           name: Start anchore engine.
