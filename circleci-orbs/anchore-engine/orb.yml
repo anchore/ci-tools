@@ -75,7 +75,7 @@ executors:
       anchore_engine_version:
         description: Version of anchore-engine container to run (recommended to keep default value)
         type: string
-        default: "v0.3.2"
+        default: "v0.3.3"
     environment:
       ANCHORE_CLI_USER: admin
       ANCHORE_CLI_PASS: foobar
@@ -106,7 +106,7 @@ commands:
     steps:
       - run:
           name: Add private registry credentials to anchore engine.
-          command: anchore-cli registry add << parameters.registry_name >> << parameters.registry_user >> << parameters.registry_pass >> --skip-validate
+          command: anchore-cli registry add "<< parameters.registry_name >>" "<< parameters.registry_user >>" "<< parameters.registry_pass >>" --skip-validate
 
   analyze_local_image:
     description: |
@@ -176,8 +176,8 @@ commands:
       - run:
           name: Analyze image with anchore engine.
           command: |
-            anchore_ci_tools --analyze --report --image << parameters.image_name >> --timeout << parameters.timeout >>
-            anchore-cli image get << parameters.image_name >>
+            anchore_ci_tools --analyze --report --image "<< parameters.image_name >>" --timeout << parameters.timeout >>
+            anchore-cli image get "<< parameters.image_name >>"
   
   install_tools:
     description: Install anchore_ci_tools.py
@@ -227,12 +227,12 @@ commands:
       - run:
           name: Evaluate image against desired policy bundle.
           command: |
-            (anchore-cli --json policy add << parameters.policy_bundle_file_path >> | jq '.policyId' | xargs anchore-cli policy activate) &> /dev/null || \
+            (anchore-cli --json policy add "<< parameters.policy_bundle_file_path >>" | jq '.policyId' | xargs anchore-cli policy activate) &> /dev/null || \
               printf "\n%s\n" "Custom policy bundle not found - << parameters.policy_bundle_file_path >> - using default policy bundle."
             if << parameters.policy_failure >>; then
-              anchore-cli evaluate check << parameters.image_name >> --detail
+              anchore-cli evaluate check "<< parameters.image_name >>" --detail
             else
-              (set +o pipefail; anchore-cli evaluate check << parameters.image_name >> --detail | tee /dev/null)
+              (set +o pipefail; anchore-cli evaluate check "<< parameters.image_name >>" --detail | tee /dev/null)
             fi
 
   setup_anchore_engine:
