@@ -228,13 +228,6 @@ jobs:
 workflows:
   scan_image:
     jobs:
-    - anchore/image_scan:
-        image_name: 'gcr.io/testing-214322/alpine-test'
-        private_registry: true
-        registry_name: gcr.io
-        registry_user: "_json_key"
-        registry_pass: "$_gcr_json_key"
-
     - build_stateless_image:
         context: dockerhub
         filters:
@@ -258,6 +251,14 @@ workflows:
     - local_image_scan:
         requires:
           - custom_policy_pass
+    - anchore/image_scan:
+        requires:
+          - local_image_scan
+        image_name: 'gcr.io/testing-214322/alpine-test'
+        private_registry: true
+        registry_name: gcr.io
+        registry_user: "_json_key"
+        registry_pass: "$_gcr_json_key"
     - anchore/image_scan:
         requires:
           - local_image_scan

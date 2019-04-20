@@ -15,7 +15,7 @@ examples:
     usage:
       version: 2.1
       orbs:
-        anchore: anchore/anchore-engine@1.2.0
+        anchore: anchore/anchore-engine@1.3.0
       workflows:
         scan_image:
           jobs:
@@ -31,7 +31,7 @@ examples:
     usage:
       version: 2.1
       orbs:
-        anchore: anchore/anchore-engine@1.2.0
+        anchore: anchore/anchore-engine@1.3.0
       workflows:
         scan_image:
           jobs:
@@ -52,37 +52,38 @@ examples:
     usage:
       version: 2.1
       orbs:
-        anchore: anchore/anchore-engine@1.2.0
+        anchore: anchore/anchore-engine@1.3.0
       jobs:
         local_image_scan:
           executor: anchore/anchore_engine
           steps:
-            - checkout:
-                path: ~/project/src/
+            - setup_remote_docker
+            - checkout
             - run:
                 name: build container
-                command: docker build -t "${CIRCLE_PROJECT_REPONAME}:ci" ~/project/src/
+                command: docker build -t "anchore/anchore-engine:ci" .
             - anchore/analyze_local_image:
-                image_name: ${CIRCLE_PROJECT_REPONAME}:ci
+                image_name: anchore/anchore-engine:ci
                 timeout: '500'
                 policy_failure: True
             - anchore/parse_reports
 
 executors:
   anchore_engine:
-    description: Machine runner with anchore engine default environment variables set.
-    parameters:
-      anchore_engine_version:
-        description: Version of anchore-engine container to run (recommended to keep default value)
-        type: string
-        default: "v0.3.3"
+    description: |
+      CircleCi python 3.6 image with anchore engine default environment variables set.
+      Anchore inline-scan v0.3.3 image running as a docker service.
     environment:
       ANCHORE_CLI_USER: admin
       ANCHORE_CLI_PASS: foobar
+      ANCHORE_CLI_URL: 'http://anchore-engine:8228/v1/'
       ANCHORE_CLI_SSL_VERIFY: 'n'
-      ANCHORE_VERSION: << parameters.anchore_engine_version >>
-    machine:
-      image: circleci/classic:201808-01
+      ANCHORE_VERSION: v0.3.3
+    docker:
+      - image: circleci/python:3.6
+      - image: anchore/inline-scan:v0.3.3
+        name: anchore-engine
+        command: start
 
 commands:
   add_private_registry:
@@ -117,7 +118,7 @@ commands:
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: "/home/circleci/project/.circleci/.anchore/policy_bundle.json"
+        default: "~/project/.circleci/.anchore/policy_bundle.json"
       policy_failure:
         description: Set to True if pipeline should stop on policy evaluation status 'fail'.
         type: boolean
@@ -131,28 +132,16 @@ commands:
         default: "300"
     steps:
       - install_tools
-      - setup_anchore_engine
       - run:
-          name: Start registry container & push local image.
+          name: tag & push local image.
           command: |
-            cat \<< EOF \>> docker-compose.yaml
-
-              anchore-registry:
-                image: "registry:latest"
-                ports:
-                - "5000:5000"
-            EOF
-            docker-compose up -d
-            echo "127.0.0.1 anchore-registry" | sudo tee -a /etc/hosts > /dev/null
-            echo "Waiting for registry to start..."
-            sleep 15
-            docker tag << parameters.image_name >> anchore-registry:5000/<< parameters.image_name >>
-            docker push anchore-registry:5000/<< parameters.image_name >>
+            docker tag << parameters.image_name >> anchore-engine:5000/<< parameters.image_name >>
+            docker push anchore-engine:5000/<< parameters.image_name >>
       - analyze_image:
-          image_name: anchore-registry:5000/<< parameters.image_name >>
+          image_name: anchore-engine:5000/<< parameters.image_name >>
           timeout: << parameters.timeout >>
       - policy_evaluation:
-          image_name: anchore-registry:5000/<< parameters.image_name >>
+          image_name: anchore-engine:5000/<< parameters.image_name >>
           policy_failure: << parameters.policy_failure >>
           policy_bundle_file_path: << parameters.policy_bundle_file_path >>
       - parse_reports
@@ -176,7 +165,7 @@ commands:
       - run:
           name: Analyze image with anchore engine.
           command: |
-            anchore_ci_tools --analyze --report --image "<< parameters.image_name >>" --timeout << parameters.timeout >>
+            python3 ~/bin/anchore_ci_tools.py --analyze --report --image "<< parameters.image_name >>" --timeout << parameters.timeout >>
             anchore-cli image get "<< parameters.image_name >>"
   
   install_tools:
@@ -185,15 +174,10 @@ commands:
       - run:
           name: Install anchore tools
           command: |
-            curl -o /tmp/anchore_ci_tools.py "https://raw.githubusercontent.com/anchore/ci-tools/${ANCHORE_VERSION}/scripts/anchore_ci_tools.py"
-            chmod +x /tmp/anchore_ci_tools.py
-            pyenv global 3.6.5
-            pip install --upgrade pip
-            pip install --upgrade docker-compose
-            pip install --upgrade anchorecli
-            sed -i 's|/usr/bin/python3|/opt/circleci/.pyenv/shims/python3|' /tmp/anchore_ci_tools.py
-            ln -s /tmp/anchore_ci_tools.py /home/circleci/bin/anchore_ci_tools
-
+            mkdir ~/bin
+            curl -o ~/bin/anchore_ci_tools.py "https://raw.githubusercontent.com/anchore/ci-tools/${ANCHORE_VERSION}/scripts/anchore_ci_tools.py"
+            chmod +x ~/bin/anchore_ci_tools.py
+            pip3 install --upgrade anchorecli
 
   parse_reports:
     description: Prints analysis report of package vulnerabilites using JQ.
@@ -202,9 +186,9 @@ commands:
           name: View parsed vulnerability analysis report.
           command: |
             printf "\n%s\n" "The following OS packages are installed:"
-            jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/image-content-os-report.json || true
+            jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/*-content-os-report.json || true
             printf "\n%s\n" "The following vulnerabilites were found:"
-            jq '[.vulnerabilities | group_by(.package) | .[] | {package: .[0].package, vuln: [.[].vuln]}]' anchore-reports/image-vuln-report.json || true
+            jq '[.vulnerabilities | group_by(.package) | .[] | {package: .[0].package, vuln: [.[].vuln]}]' anchore-reports/*-vuln-report.json || true
  
   policy_evaluation:
     description: |
@@ -227,133 +211,13 @@ commands:
       - run:
           name: Evaluate image against desired policy bundle.
           command: |
-            (anchore-cli --json policy add "<< parameters.policy_bundle_file_path >>" | jq '.policyId' | xargs anchore-cli policy activate) &> /dev/null || \
+            (anchore-cli --json policy add "<< parameters.policy_bundle_file_path >>" | jq '.policyId' | xargs anchore-cli policy activate) > /dev/null || \
               printf "\n%s\n" "Custom policy bundle not found - << parameters.policy_bundle_file_path >> - using default policy bundle."
             if << parameters.policy_failure >>; then
               anchore-cli evaluate check "<< parameters.image_name >>" --detail
             else
               (set +o pipefail; anchore-cli evaluate check "<< parameters.image_name >>" --detail | tee /dev/null)
             fi
-
-  setup_anchore_engine:
-    description: |
-      Setup anchore-engine using docker compose and default configuration.
-      Must be run on executor with anchore_ci_tools.py, anchorecli & docker-compose installed.
-    steps:
-      - run:
-          name: Create anchore engine configuration files.
-          command: |
-            cat \<< EOF > docker-compose.yaml
-            # Anchore engine docker-compose configuration.
-            version: '2'
-            volumes:
-              anchore-scratch: {}
-              anchore-db-volume: {}
-            services:
-              # The primary API endpoint service
-              engine-api:
-                image: anchore/anchore-engine:ANCHORE_VERSION
-                depends_on:
-                - anchore-db
-                - engine-catalog
-                ports:
-                - "8228:8228"
-                logging:
-                  driver: "json-file"
-                  options:
-                    max-size: 100m
-                environment:
-                - ANCHORE_ENDPOINT_HOSTNAME=engine-api
-                - ANCHORE_DB_HOST=anchore-db
-                - ANCHORE_DB_PASSWORD=mysecretpassword
-                command: ["anchore-manager", "service", "start", "apiext"]
-
-              # Catalog is the primary persistence and state manager of the system
-              engine-catalog:
-                image: anchore/anchore-engine:ANCHORE_VERSION
-                depends_on:
-                - anchore-db
-                logging:
-                  driver: "json-file"
-                  options:
-                    max-size: 100m
-                expose:
-                - 8228
-                environment:
-                - ANCHORE_ENDPOINT_HOSTNAME=engine-catalog
-                - ANCHORE_DB_HOST=anchore-db
-                - ANCHORE_DB_PASSWORD=mysecretpassword
-                command: ["anchore-manager", "service", "start", "catalog"]
-              engine-simpleq:
-                image: anchore/anchore-engine:ANCHORE_VERSION
-                depends_on:
-                - anchore-db
-                - engine-catalog
-                expose:
-                - 8228
-                logging:
-                  driver: "json-file"
-                  options:
-                    max-size: 100m
-                environment:
-                - ANCHORE_ENDPOINT_HOSTNAME=engine-simpleq
-                - ANCHORE_DB_HOST=anchore-db
-                - ANCHORE_DB_PASSWORD=mysecretpassword
-                command: ["anchore-manager", "service", "start", "simplequeue"]
-              engine-policy-engine:
-                image: anchore/anchore-engine:ANCHORE_VERSION
-                depends_on:
-                - anchore-db
-                - engine-catalog
-                expose:
-                - 8228
-                logging:
-                  driver: "json-file"
-                  options:
-                    max-size: 100m
-                environment:
-                - ANCHORE_ENDPOINT_HOSTNAME=engine-policy-engine
-                - ANCHORE_DB_HOST=anchore-db
-                - ANCHORE_DB_PASSWORD=mysecretpassword
-                command: ["anchore-manager", "service", "start", "policy_engine"]
-              engine-analyzer:
-                image: anchore/anchore-engine:ANCHORE_VERSION
-                depends_on:
-                - anchore-db
-                - engine-catalog
-                expose:
-                - 8228
-                logging:
-                  driver: "json-file"
-                  options:
-                    max-size: 100m
-                environment:
-                - ANCHORE_ENDPOINT_HOSTNAME=engine-analyzer
-                - ANCHORE_DB_HOST=anchore-db
-                - ANCHORE_DB_PASSWORD=mysecretpassword
-                volumes:
-                - anchore-scratch:/analysis_scratch
-                command: ["anchore-manager", "service", "start", "analyzer"]
-              anchore-db:
-                image: anchore/engine-db-preload:ANCHORE_VERSION
-                volumes:
-                - anchore-db-volume:/var/lib/postgresql/data
-                environment:
-                - POSTGRES_PASSWORD=mysecretpassword
-                expose:
-                - 5432
-                logging:
-                  driver: "json-file"
-                  options:
-                    max-size: 100m
-            EOF
-            sed -i "s/ANCHORE_VERSION/$ANCHORE_VERSION/g" docker-compose.yaml
-
-      - run:
-          name: Start anchore engine.
-          command: |
-            docker-compose up -d
-            anchore-cli system wait --interval 10
 
 jobs:
   image_scan:
@@ -416,7 +280,6 @@ jobs:
           condition: << parameters.after_checkout >>
           steps: << parameters.after_checkout >>
       - install_tools
-      - setup_anchore_engine
       - when:
           name: Run before_analyze lifecycle hook steps.
           condition: << parameters.before_analyze >>
