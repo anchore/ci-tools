@@ -34,6 +34,7 @@ jobs:
   local_image_scan:
     executor: anchore/anchore_engine
     steps:
+    - setup_remote_docker
     - checkout
     - run:
         name: build container
@@ -46,6 +47,7 @@ jobs:
   custom_policy_fail:
     executor: anchore/anchore_engine
     steps:
+    - setup_remote_docker
     - checkout
     - run:
         name: build container
@@ -58,6 +60,7 @@ jobs:
   custom_policy_pass:
     executor: anchore/anchore_engine
     steps:
+    - setup_remote_docker
     - checkout
     - run:
         name: build container

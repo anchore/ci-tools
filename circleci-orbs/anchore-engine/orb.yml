@@ -177,7 +177,7 @@ commands:
             mkdir ~/bin
             curl -o ~/bin/anchore_ci_tools.py "https://raw.githubusercontent.com/anchore/ci-tools/${ANCHORE_VERSION}/scripts/anchore_ci_tools.py"
             chmod +x ~/bin/anchore_ci_tools.py
-            pip3 install --upgrade anchorecli
+            pip3 install --upgrade anchorecli --user
 
   parse_reports:
     description: Prints analysis report of package vulnerabilites using JQ.
