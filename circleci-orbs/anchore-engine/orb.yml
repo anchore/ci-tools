@@ -72,17 +72,16 @@ executors:
   anchore_engine:
     description: |
       CircleCi python 3.6 image with anchore engine default environment variables set.
-      Anchore inline-scan v0.3.3 image running as a docker service.
+      Anchore inline-scan image running as a docker service.
     environment:
       ANCHORE_CLI_USER: admin
       ANCHORE_CLI_PASS: foobar
-      ANCHORE_CLI_URL: 'http://anchore-engine:8228/v1/'
+      ANCHORE_CLI_URL: 'http://localhost:8228/v1/'
       ANCHORE_CLI_SSL_VERIFY: 'n'
       ANCHORE_VERSION: v0.3.3
     docker:
       - image: circleci/python:3.6
       - image: anchore/inline-scan:v0.3.3
-        name: anchore-engine
         command: start
 
 commands:
@@ -131,19 +130,23 @@ commands:
         type: string
         default: "300"
     steps:
-      - install_tools
       - run:
-          name: tag & push local image.
+          name: Scan local image.
           command: |
-            docker tag << parameters.image_name >> anchore-engine:5000/<< parameters.image_name >>
-            docker push anchore-engine:5000/<< parameters.image_name >>
-      - analyze_image:
-          image_name: anchore-engine:5000/<< parameters.image_name >>
-          timeout: << parameters.timeout >>
-      - policy_evaluation:
-          image_name: anchore-engine:5000/<< parameters.image_name >>
-          policy_failure: << parameters.policy_failure >>
-          policy_bundle_file_path: << parameters.policy_bundle_file_path >>
+            run_cmd=('curl -s "https://ci-tools.anchore.io/inline_scan-${ANCHORE_VERSION}" | bash -s -- -r -t "<< parameters.timeout >>"')
+            if [[ << parameters.policy_failure >> ]]; then
+              run_cmd+=('-f')
+            fi
+            if [[ -f << parameters.policy_bundle_file_path >> ]]; then
+              run_cmd+=('-p << parameters.policy_bundle_file_path >>')
+            else
+              echo "ERROR - could not stat << parameters.policy_bundle_file_path >>. Using default policy bundle."
+            fi
+            if [[ << parameters.policy_failure >> ]]; then
+              run_cmd+=('-f')
+            fi
+            run_cmd+=('<< parameters.image_name >>')
+            eval $run_cmd
       - parse_reports
       - store_artifacts:
           path: anchore-reports

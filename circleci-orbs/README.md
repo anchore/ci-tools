@@ -10,13 +10,13 @@ All orbs are tested in .circleci/config.yaml of this repo. Finished orbs will be
   * circleci orb publish orb.yml anchore/anchore-engine@<sem_ver>
 
 
-## Examples for using the anchore/anchore-engine@1.2.1 CircleCi orb:
+## Examples for using the anchore/anchore-engine@1.3.0 CircleCi orb:
 
 Adding a public image scan job to a CircleCi workflow:
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.2.1
+  anchore: anchore/anchore-engine@1.3.0
 workflows:
   scan_image:
     jobs:
@@ -29,7 +29,7 @@ Adding a private image scan job to a CircleCi workflow:
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.2.1
+  anchore: anchore/anchore-engine@1.3.0
 workflows:
   scan_image:
     jobs:
@@ -45,7 +45,7 @@ Adding image scanning to your container build pipeline job.
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.2.1
+  anchore: anchore/anchore-engine@1.3.0
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
@@ -67,7 +67,7 @@ Job will be marked as 'failed' if the Anchore policy evaluation gives 'fail' sta
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.2.1
+  anchore: anchore/anchore-engine@1.3.0
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
