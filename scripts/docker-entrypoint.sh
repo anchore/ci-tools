@@ -191,19 +191,23 @@ start_services() {
 
     echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts
 
-    if [[ ! "$exec_anchore" = "exec" ]]; then
+    if [[ ! "$exec_anchore" = "exec" ]] && [[ ! (ps aux | grep anchore-manager) ]]; then
         printf '\n%s\n' "Starting Anchore Engine."
         nohup anchore-manager service start --all &> /var/log/anchore.log &
     fi
     
-    echo "Starting Postgresql."
-    touch /var/log/postgres.log && chown postgres:postgres /var/log/postgres.log
-    nohup gosu postgres bash -c 'postgres &> /var/log/postgres.log &' &> /dev/null
-    sleep 3 && gosu postgres pg_isready -d postgres --quiet && echo "Postgresql started successfully!"
-    
-    echo "Starting Docker registry."
-    nohup registry serve /etc/docker/registry/config.yml &> /var/log/registry.log &
-    curl --silent --retry 3 --retry-connrefused "${ANCHORE_ENDPOINT_HOSTNAME}:5000" && echo "Docker registry started successfully!"
+    if [[ ! (gosu postgres pg_isready -d postgres --quiet) ]]; then
+        echo "Starting Postgresql."
+        touch /var/log/postgres.log && chown postgres:postgres /var/log/postgres.log
+        nohup gosu postgres bash -c 'postgres &> /var/log/postgres.log &' &> /dev/null
+        sleep 3 && gosu postgres pg_isready -d postgres --quiet && echo "Postgresql started successfully!"
+    fi
+
+    if [[ ! (curl --silent "${ANCHORE_ENDPOINT_HOSTNAME}:5000") ]]; then
+        echo "Starting Docker registry."
+        nohup registry serve /etc/docker/registry/config.yml &> /var/log/registry.log &
+        curl --silent --retry 3 --retry-connrefused "${ANCHORE_ENDPOINT_HOSTNAME}:5000" && echo "Docker registry started successfully!"
+    fi
 
     if [[ "$exec_anchore" = "exec" ]]; then
         echo "Starting Anchore Engine."

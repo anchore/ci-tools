@@ -82,6 +82,7 @@ executors:
     docker:
       - image: circleci/python:3.6
       - image: anchore/inline-scan:v0.3.3
+        name: anchore-engine
         command: start
 
 commands:
@@ -133,20 +134,19 @@ commands:
       - run:
           name: Scan local image.
           command: |
-            run_cmd=('curl -s "https://ci-tools.anchore.io/inline_scan-${ANCHORE_VERSION}" | bash -s -- -r -t "<< parameters.timeout >>"')
+            set -x
+            docker ps
+            exec_cmd=("docker exec -i anchore-engine docker-entrypoint.sh -r -t << parameters.timeout >>")
             if [[ << parameters.policy_failure >> ]]; then
-              run_cmd+=('-f')
+              exec_cmd+=("-f")
             fi
             if [[ -f << parameters.policy_bundle_file_path >> ]]; then
-              run_cmd+=('-p << parameters.policy_bundle_file_path >>')
+              exec_cmd+=("-p << parameters.policy_bundle_file_path >>")
             else
               echo "ERROR - could not stat << parameters.policy_bundle_file_path >>. Using default policy bundle."
             fi
-            if [[ << parameters.policy_failure >> ]]; then
-              run_cmd+=('-f')
-            fi
-            run_cmd+=('<< parameters.image_name >>')
-            eval $run_cmd
+            exec_cmd+=("-i << parameters.image_name >>")
+            docker save << parameters.image_name >> | (eval $exec_cmd)
       - parse_reports
       - store_artifacts:
           path: anchore-reports
