@@ -11,7 +11,7 @@ examples:
     description: |
       Use this job to scan an image located in a public registry. A custom
       policy can be used for evaluation, add custom Anchore policy bundle to
-      .circleci/.anchore/policy_bundle.json in your repo.
+      .circleci/.anchore/policy_bundle.json in your repository.
     usage:
       version: 2.1
       orbs:
@@ -27,7 +27,7 @@ examples:
     description: |
       Use this job to scan an image located in a private registry. A custom
       policy can be used for evaluation, add custom Anchore policy bundle to
-      .circleci/.anchore/policy_bundle.json in your repo.
+      .circleci/.anchore/policy_bundle.json in your repository.
     usage:
       version: 2.1
       orbs:
@@ -48,7 +48,7 @@ examples:
       it can be used to scan an image that hasn't been pushed to a registry yet.
       If Anchore policy evaluation gives 'fail' status, the CI job will be marked
       as a failure. A custom policy can be used for evaluation, add custom Anchore
-      policy bundle to .circleci/.anchore/policy_bundle.json in your repo.
+      policy bundle to .circleci/.anchore/policy_bundle.json in your repository.
     usage:
       version: 2.1
       orbs:
@@ -77,7 +77,7 @@ examples:
       it can be used to scan multiple images that haven't been pushed to a registry yet.
       If Anchore policy evaluation gives 'fail' status, the CI job will be marked
       as a failure. A custom policy can be used for evaluation, add custom Anchore
-      policy bundle to .circleci/.anchore/policy_bundle.json in your repo. Scanning multiple
+      policy bundle to .circleci/.anchore/policy_bundle.json in your repository. Scanning multiple
       images does not support passing a dockerfile.
     usage:
       version: 2.1
@@ -184,12 +184,12 @@ commands:
             if [ ! $(which curl) ]; then
               (set +o pipefail; apk add curl || apt-get install -y curl || yum install -y curl)
             fi 
-            POLICY_FAILURE=<< parameters.policy_failure >>
-            ANCHORE_VERSION=<< parameters.anchore_version >>
-            TIMEOUT=<< parameters.timeout >>
-            POLICY_BUNDLE_PATH=<< parameters.policy_bundle_file_path >>
-            DOCKERFILE_PATH=<< parameters.dockerfile_path >>
-            IMAGE_NAME=<< parameters.image_name >>
+            POLICY_FAILURE="<< parameters.policy_failure >>"
+            ANCHORE_VERSION="<< parameters.anchore_version >>"
+            TIMEOUT="<< parameters.timeout >>"
+            POLICY_BUNDLE_PATH="<< parameters.policy_bundle_file_path >>"
+            DOCKERFILE_PATH="<< parameters.dockerfile_path >>"
+            IMAGE_NAME="<< parameters.image_name >>"
             run_cmd="curl -s https://ci-tools.anchore.io/inline_scan-${ANCHORE_VERSION} | bash -s -- -r -t $TIMEOUT"
             if [ $POLICY_FAILURE ]; then
               run_cmd="$run_cmd -f"
@@ -242,23 +242,23 @@ commands:
             pip3 install --upgrade anchorecli --user
 
   parse_reports:
-    description: Prints analysis report of package vulnerabilites using JQ.
+    description: Prints analysis report of package vulnerabilities using JQ.
     steps:
       - run:
           name: View parsed vulnerability analysis report.
           command: |
-            if [ ! $(which jq) ]; then
+            if [[ ! $(which jq) ]]; then
               (set +o pipefail; apk add jq || apt-get install -y jq || yum install -y jq)
             fi
             printf "\n%s\n" "The following OS packages are installed:"
             jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/*content-os*.json || true
-            printf "\n%s\n" "The following vulnerabilites were found:"
+            printf "\n%s\n" "The following vulnerabilities were found:"
             jq '[.vulnerabilities | group_by(.package) | .[] | {package: .[0].package, vuln: [.[].vuln]}]' anchore-reports/*vuln*.json || true
  
   policy_evaluation:
     description: |
       Perform policy evaluation using Anchore Engine image analysis. A customized policy bundle can be utilized for evaluation.
-      Custom policy bundles should be added to your repo at .circleci/.anchore/policy_bundle.json. If using multiple policy
+      Custom policy bundles should be added to your repository at .circleci/.anchore/policy_bundle.json. If using multiple policy
       bundles, or if using executor other than anchore/anchore_engine a custom policy bundle path can be set as a parameter.
     parameters:
       image_name:
@@ -291,7 +291,7 @@ jobs:
     description: |
       Performs a static security analysis of docker container with anchore engine.
       A custom policy can be used for evaluation, add custom Anchore policy bundle
-      to .circleci/.anchore/policy_bundle.json in your repo. Anchore engine pulls
+      to .circleci/.anchore/policy_bundle.json in your repository. Anchore engine pulls
       image from public/private docker registries. Requires registry credentials
       to access private images, use ENV vars $DOCKER_USER & $DOCKER_PASS
     parameters:
@@ -347,7 +347,7 @@ jobs:
           steps: << parameters.after_checkout >>
       - install_tools
       - when:
-          name: Run before_analyze lifecycle hook steps.
+          name: Run before_analyze life cycle hook steps.
           condition: << parameters.before_analyze >>
           steps: << parameters.before_analyze >>
       - when:
@@ -361,7 +361,7 @@ jobs:
           image_name: << parameters.image_name >>
           timeout: << parameters.timeout >>
       - when:
-          name: Run after_analyze lifecycle hook steps.
+          name: Run after_analyze life cycle hook steps.
           condition: << parameters.after_analyze >>
           steps: << parameters.after_analyze >>
       - policy_evaluation:
