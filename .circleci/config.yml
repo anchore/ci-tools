@@ -32,8 +32,7 @@ commands:
 
 jobs:
   local_image_scan:
-    docker:
-      - image: docker:stable-git
+    executor: anchore/anchore_engine
     steps:
     - setup_remote_docker
     - checkout
@@ -41,15 +40,14 @@ jobs:
         name: build container
         command: docker build -t "${CIRCLE_PROJECT_REPONAME}:ci" -f .circleci/Dockerfile .
     - anchore/analyze_local_image:
-        image_name: "${CIRCLE_PROJECT_REPONAME}:ci"
+        image_name: ${CIRCLE_PROJECT_REPONAME}:ci
         dockerfile_path: .circleci/Dockerfile
     - anchore/parse_reports
     - store_artifacts:
         path: anchore-reports
   
   local_images_scan:
-    docker:
-      - image: docker:stable-git
+    executor: anchore/anchore_engine
     steps:
     - setup_remote_docker
     - checkout
@@ -66,8 +64,7 @@ jobs:
         path: anchore-reports
 
   custom_policy_fail:
-    docker:
-      - image: docker:stable-git
+    executor: anchore/anchore_engine
     steps:
     - setup_remote_docker
     - checkout
@@ -75,7 +72,7 @@ jobs:
         name: build container
         command: docker build -t "${CIRCLE_PROJECT_REPONAME}:policy_fail" -f .circleci/node_critical_fail/Dockerfile .circleci/node_critical_fail/
     - anchore/analyze_local_image:
-        image_name: "${CIRCLE_PROJECT_REPONAME}:policy_fail"
+        image_name: ${CIRCLE_PROJECT_REPONAME}:policy_fail
         policy_failure: True
         dockerfile_path: .circleci/node_critical_fail/Dockerfile
         policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
@@ -84,8 +81,7 @@ jobs:
         path: anchore-reports
 
   custom_policy_pass:
-    docker:
-      - image: docker:stable-git
+    executor: anchore/anchore_engine
     steps:
     - setup_remote_docker
     - checkout
@@ -93,7 +89,7 @@ jobs:
         name: build container
         command: docker build -t "${CIRCLE_PROJECT_REPONAME}:policy_pass" -f .circleci/node_critical_pass/Dockerfile .circleci/node_critical_pass/
     - anchore/analyze_local_image:
-        image_name: "${CIRCLE_PROJECT_REPONAME}:policy_pass"
+        image_name: ${CIRCLE_PROJECT_REPONAME}:policy_pass
         policy_failure: True
         dockerfile_path: .circleci/node_critical_pass/Dockerfile
         policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
@@ -289,19 +285,21 @@ workflows:
     - anchore/image_scan:
         requires:
           - local_image_scan
-        image_name: 'gcr.io/testing-214322/alpine-test'
+        image_name: gcr.io/testing-214322/alpine-test
         private_registry: true
         registry_name: gcr.io
-        registry_user: "_json_key"
-        registry_pass: "$_gcr_json_key"
+        registry_user: _json_key
+        registry_pass: $_gcr_json_key
     - anchore/image_scan:
-        image_name: 'anchore/anchore-engine:latest'
-        policy_bundle_file_path: ""
+        requires:
+          - local_image_scan
+        image_name: anchore/anchore-engine:latest
+        policy_bundle_file_path: ''
     - anchore/image_scan:
         requires:
           - local_image_scan
         context: dockerhub
-        image_name: 'anchore/private_testing:anchore-ui-dev'
+        image_name: anchore/private_testing:anchore-ui-dev
         private_registry: True
         timeout: '500'
   

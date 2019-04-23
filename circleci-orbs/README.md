@@ -48,8 +48,7 @@ orbs:
   anchore: anchore/anchore-engine@1.3.0
 jobs:
   local_image_scan:
-    docker:
-      - image: docker:stable-git
+    executor: anchore/anchore_engine
     steps:
       - setup_remote_docker
       - checkout
@@ -97,8 +96,7 @@ orbs:
   anchore: anchore/anchore-engine@1.3.0
 jobs:
   local_image_scan:
-    docker:
-      - image: docker:stable-git
+    executor: anchore/anchore_engine
     steps:
       - setup_remote_docker
       - checkout
