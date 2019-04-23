@@ -158,7 +158,7 @@ commands:
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: ""
+        default: "~/project/.circleci/.anchore/policy_bundle.json"
       policy_failure:
         description: Set to True if pipeline should stop on policy evaluation status 'fail'.
         type: boolean
@@ -226,14 +226,13 @@ commands:
             docker cp anchore-engine:/anchore-engine/anchore-reports/ ./
   
   install_tools:
-    description: Setup Anchore Engine
+    description: Start & wait for Anchore Engine
     steps:
       - run:
           name: Start Anchore Engine
-          command: docker run -d --name anchore-engine anchore/inline-scan:${ANCHORE_VERSION} start
-      - run:
-          name: Wait for Anchore Engine
-          command: docker exec -it anchore-engine anchore_ci_tools.py --wait --timeout 300
+          command: |
+            docker run -d --name anchore-engine anchore/inline-scan:${ANCHORE_VERSION} start
+            docker exec -it anchore-engine anchore_ci_tools.py --wait --timeout 300
 
   parse_reports:
     description: Prints analysis report of package vulnerabilities using JQ.
@@ -244,12 +243,15 @@ commands:
             if [[ ! $(which jq) ]]; then
               (set +o pipefail; apk add jq || apt-get install -y jq || yum install -y jq)
             fi
-            # docker cp anchore-engine:anchore-engine/anchore-reports/ ./
-            printf "\n%s\n" "The following OS packages are installed:"
-            jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/*content-os*.json || true
-            printf "\n%s\n" "The following vulnerabilities were found:"
-            jq '[.vulnerabilities | group_by(.package) | .[] | {package: .[0].package, vuln: [.[].vuln]}]' anchore-reports/*vuln*.json || true
- 
+            if [[ $(ls anchore-reports/*content-os*.json 2> /dev/null) ]]; then
+              printf "\n%s\n" "The following OS packages are installed:"
+              jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/*content-os*.json
+            fi
+            if [[ $(ls anchore-reports/*vuln*.json 2> /dev/null) ]]; then
+              printf "\n%s\n" "The following vulnerabilities were found:"
+              jq '[.vulnerabilities | group_by(.package) | .[] | {package: .[0].package, vuln: [.[].vuln]}]' anchore-reports/*vuln*.json
+            fi
+
   policy_evaluation:
     description: |
       Perform policy evaluation using Anchore Engine image analysis. A customized policy bundle can be utilized for evaluation.
@@ -266,7 +268,7 @@ commands:
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: ""
+        default: "~/project/.circleci/.anchore/policy_bundle.json"
     steps:
       - run:
           name: Evaluate image against desired policy bundle.
