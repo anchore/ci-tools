@@ -172,7 +172,6 @@ commands:
       - run:
           name: Scan local image.
           command: |
-            set -x
             if [[ ! $(which bash) ]]; then
               (set +o pipefail; apk add bash || apt-get install -y bash || yum install -y bash)
             fi
@@ -285,17 +284,20 @@ commands:
           command: |
             BUNDLE_PATH="<< parameters.policy_bundle_file_path >>"
             IMAGE_NAME="<< parameters.image_name >>"
+            if [[ ! $(which jq) ]]; then
+              (set +o pipefail; apk add jq || apt-get install -y jq || yum install -y jq)
+            fi
             if [[ ! -z "$BUNDLE_PATH" ]] && [[ -f "$BUNDLE_PATH" ]]; then
               docker cp "$BUNDLE_PATH" anchore-engine:/anchore-engine/$(basename "$BUNDLE_PATH")
-              (docker exec -i anchore-engine anchore-cli --json policy add "/anchore-engine/$(basename $BUNDLE_PATH)" | jq '.policyId' | xargs anchore-cli policy activate) || \
+              (docker exec -i anchore-engine anchore-cli --json policy add "/anchore-engine/$(basename $BUNDLE_PATH)" | jq '.policyId' | xargs docker exec -i anchore-engine anchore-cli policy activate) || \
                 printf "\n%s\n" "Failed to activate policy bundle $BUNDLE_PATH - using default policy."
             else
               printf "\n%s\n" "Unable to locate policy bundle $BUNDLE_PATH - using default policy."
             fi
             if << parameters.policy_failure >>; then
-              docker exec -i anchore-engine anchore-cli evaluate check "$IMAGE_NAME" --detail
+              docker exec -it anchore-engine anchore-cli evaluate check "$IMAGE_NAME" --detail
             else
-              (set +o pipefail; docker exec -i anchore-engine anchore-cli evaluate check "$IMAGE_NAME" --detail | tee /dev/null)
+              (set +o pipefail; docker exec -it anchore-engine anchore-cli evaluate check "$IMAGE_NAME" --detail | tee /dev/null)
             fi
 
 jobs:
