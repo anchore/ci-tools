@@ -113,13 +113,9 @@ executors:
       CircleCi python 3.6 image with anchore engine default environment variables set.
       Anchore inline-scan image running as a docker service.
     environment:
-      ANCHORE_CLI_USER: admin
-      ANCHORE_CLI_PASS: foobar
-      ANCHORE_CLI_URL: 'http://anchore-engine:8228/v1/'
-      ANCHORE_CLI_SSL_VERIFY: 'n'
       ANCHORE_VERSION: v0.3.3
     docker:
-      - image: circleci/python:3.6
+      - image: docker:stable
 
 commands:
   add_private_registry:
@@ -230,14 +226,13 @@ commands:
             docker cp anchore-engine:/anchore-engine/anchore-reports/ ./
   
   install_tools:
-    description: Start anchore engine
+    description: Setup Anchore Engine
     steps:
       - run:
-          name:
-          command: |
-            docker run -d --name anchore-engine anchore/inline-scan:v0.3.3 start
+          name: Start Anchore Engine
+          command: docker run -d --name anchore-engine anchore/inline-scan:${ANCHORE_VERSION} start
       - run:
-          name: Wait for anchore engine
+          name: Wait for Anchore Engine
           command: docker exec -it anchore-engine anchore_ci_tools.py --wait --timeout 300
 
   parse_reports:
@@ -276,7 +271,6 @@ commands:
       - run:
           name: Evaluate image against desired policy bundle.
           command: |
-            set +x
             BUNDLE_PATH="<< parameters.policy_bundle_file_path >>"
             if [[ ! -z "$BUNDLE_PATH" ]] && [[ -f "$BUNDLE_PATH" ]]; then
               docker cp "$BUNDLE_PATH" anchore-engine:/anchore-engine/$(basename "$BUNDLE_PATH")
@@ -345,7 +339,8 @@ jobs:
         type: string
         default: "300"
     steps:
-      - setup_remote_docker
+      - setup_remote_docker:
+          docker_layer_caching: true 
       - checkout:
           path: ~/project/src/
       - when:
