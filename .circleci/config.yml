@@ -55,9 +55,10 @@ jobs:
         name: build container
         command: |
           docker build -t "${CIRCLE_PROJECT_REPONAME}:ci" -f .circleci/Dockerfile .
-          docker build -t "${CIRCLE_PROJECT_REPONAME}:inline" .
+          docker build -t "${CIRCLE_PROJECT_REPONAME}:pass" -f .circleci/node_critical_pass/Dockerfile .circleci/node_critical_pass/
+          docker build -t "${CIRCLE_PROJECT_REPONAME}:fail" -f .circleci/node_critical_fail/Dockerfile .circleci/node_critical_fail/
     - anchore/analyze_local_image:
-        image_name: "${CIRCLE_PROJECT_REPONAME}:ci ${CIRCLE_PROJECT_REPONAME}:inline"
+        image_name: "${CIRCLE_PROJECT_REPONAME}:ci ${CIRCLE_PROJECT_REPONAME}:pass ${CIRCLE_PROJECT_REPONAME}:fail"
     - anchore/parse_reports
 
   custom_policy_fail:

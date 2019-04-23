@@ -251,9 +251,9 @@ commands:
               (set +o pipefail; apk add jq || apt-get install -y jq || yum install -y jq)
             fi
             printf "\n%s\n" "The following OS packages are installed:"
-            jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/*-content-os-report.json || true
+            jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/*content-os*.json || true
             printf "\n%s\n" "The following vulnerabilites were found:"
-            jq '[.vulnerabilities | group_by(.package) | .[] | {package: .[0].package, vuln: [.[].vuln]}]' anchore-reports/*-vuln-report.json || true
+            jq '[.vulnerabilities | group_by(.package) | .[] | {package: .[0].package, vuln: [.[].vuln]}]' anchore-reports/*vuln*.json || true
  
   policy_evaluation:
     description: |
