@@ -22,6 +22,7 @@ examples:
             - anchore/image_scan:
                 image_name: docker.io/anchore/anchore-engine:latest
                 timeout: '300'
+                policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
 
   private_image_scan:
     description: |
@@ -39,8 +40,8 @@ examples:
                 image_name: docker.io/anchore/anchore-engine:latest
                 private_registry: True
                 registry_name: docker.io
-                registry_user: "${DOCKER_USER}"
-                registry_pass: "${DOCKER_PASS}"
+                registry_user: $DOCKER_USER
+                registry_pass: $DOCKER_PASS
 
   local_image_scan:
     description: |
@@ -55,8 +56,7 @@ examples:
         anchore: anchore/anchore-engine@1.3.0
       jobs:
         local_image_scan:
-          docker:
-            - image: docker:stable-git
+          executor: anchore_engine
           steps:
             - setup_remote_docker
             - checkout
@@ -79,16 +79,15 @@ examples:
       it can be used to scan multiple images that haven't been pushed to a registry yet.
       If Anchore policy evaluation gives 'fail' status, the CI job will be marked
       as a failure. A custom policy can be used for evaluation, add custom Anchore
-      policy bundle to .circleci/.anchore/policy_bundle.json in your repository. Scanning multiple
-      images does not support passing a dockerfile.
+      policy bundle to .circleci/.anchore/policy_bundle.json in your repository. 
+      Scanning multiple images does not support passing a dockerfile.
     usage:
       version: 2.1
       orbs:
         anchore: anchore/anchore-engine@1.3.0
       jobs:
         local_image_scan:
-          docker:
-            - image: docker:stable-git
+          executor: anchore_engine
           steps:
             - setup_remote_docker
             - checkout
@@ -99,7 +98,7 @@ examples:
                   docker build -t "example/test:staging" staging/
                   docker build -t "example/test:latest" prod/
             - anchore/analyze_local_image:
-                image_name: "example/test:dev example/test:staging example/test:latest"
+                image_name: 'example/test:dev example/test:staging example/test:latest'
                 timeout: '500'
                 policy_failure: True
                 policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
@@ -110,8 +109,7 @@ examples:
 executors:
   anchore_engine:
     description: |
-      CircleCi python 3.6 image with anchore engine default environment variables set.
-      Anchore inline-scan image running as a docker service.
+      Docker stable image with ANCHORE_VERSION environment variable set.
     environment:
       ANCHORE_VERSION: v0.3.3
     docker:
@@ -127,15 +125,15 @@ commands:
       registry_name:
         description: Name of private registry (eg - docker.io).
         type: string
-        default: "docker.io"
+        default: docker.io
       registry_user:
         description: Username for private registry (use env var to populate).
         type: string
-        default: "${DOCKER_USER}"
+        default: $DOCKER_USER
       registry_pass:
         description: Password for private registry (use env var to populate).
         type: string
-        default: "${DOCKER_PASS}"
+        default: $DOCKER_PASS
     steps:
       - run:
           name: Add private registry credentials to anchore engine.
@@ -150,15 +148,15 @@ commands:
       anchore_version:
         description: Version of anchore inline-scan image.
         type: string
-        default: "v0.3.3"
+        default: $ANCHORE_VERSION
       dockerfile_path:
         description: Path to dockerfile used to build image
         type: string
-        default: ""
+        default: ''
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: "~/project/.circleci/.anchore/policy_bundle.json"
+        default: ~/project/.circleci/.anchore/policy_bundle.json
       policy_failure:
         description: Set to True if pipeline should stop on policy evaluation status 'fail'.
         type: boolean
@@ -169,7 +167,7 @@ commands:
       timeout:
         description: Timeout used for Anchore Engine image scanning.
         type: string
-        default: "300"
+        default: '300'
     steps:
       - run:
           name: Scan local image.
@@ -180,10 +178,10 @@ commands:
             fi
             if [[ ! $(which curl) ]]; then
               (set +o pipefail; apk add curl || apt-get install -y curl || yum install -y curl)
-            fi 
+            fi
             POLICY_FAILURE="<< parameters.policy_failure >>"
             ANCHORE_VERSION="<< parameters.anchore_version >>"
-            TIMEOUT="<< parameters.timeout >>"
+            TIMEOUT=<< parameters.timeout >>
             POLICY_BUNDLE_PATH="<< parameters.policy_bundle_file_path >>"
             DOCKERFILE_PATH="<< parameters.dockerfile_path >>"
             IMAGE_NAME="<< parameters.image_name >>"
@@ -208,7 +206,6 @@ commands:
     description: |
       Add image to anchore engine and start analyzing.
       image_name is required, timeout is optional.
-      Must run on executor with anchore_ci_tools.py & anchorecli installed.
     parameters:
       image_name:
         description: Image repository & tag (eg - "docker.io/anchore/anchore-engine:latest").
@@ -216,23 +213,36 @@ commands:
       timeout:
         description: Timeout used for Anchore Engine image scanning.
         type: string
-        default: "300"
+        default: '300'
     steps:
       - run:
           name: Analyze image with anchore engine.
           command: |
-            docker exec -it anchore-engine anchore_ci_tools.py --analyze --report --image "<< parameters.image_name >>" --timeout << parameters.timeout >>
-            docker exec -it anchore-engine anchore-cli image get "<< parameters.image_name >>"
+            IMAGE_NAME="<< parameters.image_name >>"
+            TIMEOUT=<< parameters.timeout >>
+            docker exec -it anchore-engine anchore_ci_tools.py --analyze --report --image "$IMAGE_NAME" --timeout "$TIMEOUT"
+            docker exec -it anchore-engine anchore-cli image get "$IMAGE_NAME"
             docker cp anchore-engine:/anchore-engine/anchore-reports/ ./
   
-  install_tools:
+  start_engine:
     description: Start & wait for Anchore Engine
+    parameters:
+      anchore_version:
+        description: Version of anchore inline-scan image.
+        type: string
+        default: $ANCHORE_VERSION
+      timeout:
+        description: Timeout used for Anchore Engine image scanning.
+        type: string
+        default: '300'
     steps:
       - run:
           name: Start Anchore Engine
           command: |
+            ANCHORE_VERSION="<< parameters.anchore_version >>"
+            TIMEOUT=<< parameters.timeout >>
             docker run -d --name anchore-engine anchore/inline-scan:${ANCHORE_VERSION} start
-            docker exec -it anchore-engine anchore_ci_tools.py --wait --timeout 300
+            docker exec -it anchore-engine anchore_ci_tools.py --wait --timeout "$TIMEOUT"
 
   parse_reports:
     description: Prints analysis report of package vulnerabilities using JQ.
@@ -268,12 +278,13 @@ commands:
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: "~/project/.circleci/.anchore/policy_bundle.json"
+        default: ~/project/.circleci/.anchore/policy_bundle.json
     steps:
       - run:
           name: Evaluate image against desired policy bundle.
           command: |
             BUNDLE_PATH="<< parameters.policy_bundle_file_path >>"
+            IMAGE_NAME="<< parameters.image_name >>"
             if [[ ! -z "$BUNDLE_PATH" ]] && [[ -f "$BUNDLE_PATH" ]]; then
               docker cp "$BUNDLE_PATH" anchore-engine:/anchore-engine/$(basename "$BUNDLE_PATH")
               (docker exec -i anchore-engine anchore-cli --json policy add "/anchore-engine/$(basename $BUNDLE_PATH)" | jq '.policyId' | xargs anchore-cli policy activate) || \
@@ -282,9 +293,9 @@ commands:
               printf "\n%s\n" "Unable to locate policy bundle $BUNDLE_PATH - using default policy."
             fi
             if << parameters.policy_failure >>; then
-              docker exec -i anchore-engine anchore-cli evaluate check "<< parameters.image_name >>" --detail
+              docker exec -i anchore-engine anchore-cli evaluate check "$IMAGE_NAME" --detail
             else
-              (set +o pipefail; docker exec -i anchore-engine anchore-cli evaluate check "<< parameters.image_name >>" --detail | tee /dev/null)
+              (set +o pipefail; docker exec -i anchore-engine anchore-cli evaluate check "$IMAGE_NAME" --detail | tee /dev/null)
             fi
 
 jobs:
@@ -310,12 +321,12 @@ jobs:
         type: steps
         default: []
       image_name:
-        description: Image repository & tag (eg - "docker.io/anchore/anchore-engine:latest").
+        description: Image repository & tag (eg - docker.io/anchore/anchore-engine:latest).
         type: string
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: "/home/circleci/project/.circleci/.anchore/policy_bundle.json"
+        default: ~/project/.circleci/.anchore/policy_bundle.json
       policy_failure:
         description: Set to True if pipeline should stop on policy evaluation status 'fail'.
         type: boolean
@@ -325,31 +336,30 @@ jobs:
         type: boolean
         default: False
       registry_name:
-        description: Name of private registry (eg - "docker.io")
+        description: Name of private registry (eg - docker.io)
         type: string
-        default: "docker.io"
+        default: docker.io
       registry_user:
         description: Username for private registry (use env var $DOCKER_USER to populate).
         type: string
-        default: "${DOCKER_USER}"
+        default: $DOCKER_USER
       registry_pass:
         description: Password for private registry (use env var $DOCKER_PASS to populate).
         type: string
-        default: "${DOCKER_PASS}"
+        default: $DOCKER_PASS
       timeout:
         description: Timeout used for Anchore Engine image scanning.
         type: string
-        default: "300"
+        default: '300'
     steps:
       - setup_remote_docker:
           docker_layer_caching: true 
-      - checkout:
-          path: ~/project/src/
+      - checkout
       - when:
           name: Run after_checkout life cycle hook steps.
           condition: << parameters.after_checkout >>
           steps: << parameters.after_checkout >>
-      - install_tools
+      - start_engine
       - when:
           name: Run before_analyze life cycle hook steps.
           condition: << parameters.before_analyze >>
