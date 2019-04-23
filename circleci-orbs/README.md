@@ -48,17 +48,18 @@ orbs:
   anchore: anchore/anchore-engine@1.3.0
 jobs:
   local_image_scan:
-    executor: anchore/anchore_engine
-    working_directory: ~/project
+    docker:
+      - image: docker:stable-git
     steps:
-      - checkout:
-          path: ~/project/src/
+      - setup_remote_docker
+      - checkout
       - run:
           name: build container
-          command: docker build -t ${CIRCLE_PROJECT_REPONAME}:ci ~/project/src
+          command: docker build -t "anchore/anchore-engine:ci" .
       - anchore/analyze_local_image:
-          image_name: ${CIRCLE_PROJECT_REPONAME}:ci
+          image_name: example/test:latest
           timeout: '500'
+          dockerfile_path: ./Dockerfile
       - anchore/parse_reports
 ```
 
@@ -81,4 +82,32 @@ jobs:
           image_name: ${CIRCLE_PROJECT_REPONAME}:ci
           timeout: '500'
           policy_failure: True
+          policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
+          dockerfile_path: ./Dockerfile
       - anchore/parse_reports
+
+Build and scan multiple images, using a custom policy bundle.
+```
+version: 2.1
+orbs:
+  anchore: anchore/anchore-engine@1.3.0
+jobs:
+  local_image_scan:
+    docker:
+      - image: docker:stable-git
+    steps:
+      - setup_remote_docker
+      - checkout
+      - run:
+          name: build containers
+          command: |
+            docker build -t "example/test:dev" dev/
+            docker build -t "example/test:staging" staging/
+            docker build -t "example/test:latest" prod/
+      - anchore/analyze_local_image:
+          image_name: "example/test:dev example/test:staging example/test:latest"
+          timeout: '500'
+          policy_failure: True
+          policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
+      - anchore/parse_reports
+```

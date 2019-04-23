@@ -62,9 +62,9 @@ examples:
             - checkout
             - run:
                 name: build container
-                command: docker build -t "anchore/anchore-engine:ci" .
+                command: docker build -t "example/test:latest" .
             - anchore/analyze_local_image:
-                image_name: anchore/anchore-engine:ci
+                image_name: example/test:latest
                 timeout: '500'
                 policy_failure: True
                 policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
@@ -157,9 +157,11 @@ commands:
       dockerfile_path:
         description: Path to dockerfile used to build image
         type: string
+        default: ""
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
+        default: ""
       policy_failure:
         description: Set to True if pipeline should stop on policy evaluation status 'fail'.
         type: boolean
@@ -176,11 +178,11 @@ commands:
           name: Scan local image.
           command: |
             set -x
-            if [[ ! $(which bash) ]]; then
-              (set +o pipefail apk add bash || apt-get install -y bash || yum install -y bash)
+            if [ ! $(which bash) ]; then
+              (set +o pipefail; apk add bash || apt-get install -y bash || yum install -y bash)
             fi
-            if [[ ! $(which curl) ]]; then
-              (set +o pipefail apk add curl || apt-get install -y curl || yum install -y curl)
+            if [ ! $(which curl) ]; then
+              (set +o pipefail; apk add curl || apt-get install -y curl || yum install -y curl)
             fi 
             POLICY_FAILURE=<< parameters.policy_failure >>
             ANCHORE_VERSION=<< parameters.anchore_version >>
@@ -245,8 +247,8 @@ commands:
       - run:
           name: View parsed vulnerability analysis report.
           command: |
-            if [[ $(which jq) ]]; then
-              (set +o pipefail apk add jq || apt-get install -y jq || yum install -y jq)
+            if [ ! $(which jq) ]; then
+              (set +o pipefail; apk add jq || apt-get install -y jq || yum install -y jq)
             fi
             printf "\n%s\n" "The following OS packages are installed:"
             jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/*-content-os-report.json || true
