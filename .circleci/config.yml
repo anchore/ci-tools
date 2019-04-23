@@ -295,8 +295,6 @@ workflows:
         registry_user: "_json_key"
         registry_pass: "$_gcr_json_key"
     - anchore/image_scan:
-        requires:
-          - local_image_scan
         image_name: 'anchore/anchore-engine:latest'
         policy_bundle_file_path: ""
     - anchore/image_scan:
