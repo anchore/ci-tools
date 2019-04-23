@@ -120,10 +120,14 @@ commands:
         description: Version of anchore inline-scan image.
         type: string
         default: "v0.3.3"
+      dockerfile_path:
+        description: Path to dockerfile used to build image
+        type: string
+        default: "${PWD}/Dockerfile"
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: "~/project/.circleci/.anchore/policy_bundle.json"
+        default: "${PWD}/.circleci/.anchore/policy_bundle.json"
       policy_failure:
         description: Set to True if pipeline should stop on policy evaluation status 'fail'.
         type: boolean
@@ -140,16 +144,33 @@ commands:
           name: Scan local image.
           command: |
             set -x
-            run_cmd=("curl -s 'https://ci-tools.anchore.io/inline_scan-<< parameters.anchore_version >>' | bash -s -- -r -t << parameters.timeout >>")
-            if [[ << parameters.policy_failure >> ]]; then
-              run_cmd+=("-f")
+            if [[ ! $(which bash) ]]; then
+              apk add bash
             fi
-            if [[ -f << parameters.policy_bundle_file_path >> ]]; then
-              run_cmd+=("-p << parameters.policy_bundle_file_path >>")
+            if [[ ! $(which curl) ]]; then
+              apk add curl
+            fi 
+            POLICY_FAILURE=<< parameters.policy_failure >>
+            ANCHORE_VERSION=<< parameters.anchore_version >>
+            TIMEOUT=<< parameters.timeout >>
+            POLICY_BUNDLE_PATH=<< parameters.policy_bundle_file_path >>
+            DOCKERFILE_PATH=<< parameters.dockerfile_path >>
+            IMAGE_NAME=<< parameters.image_name >>
+            run_cmd="curl -s https://ci-tools.anchore.io/inline_scan-${ANCHORE_VERSION} | bash -s -- -r -t $TIMEOUT"
+            if [ $POLICY_FAILURE ]; then
+              run_cmd="$run_cmd -f"
+            fi
+            if [ ! -z POLICY_BUNDLE_PATH ] && [ -f $POLICY_BUNDLE_PATH ]; then
+              run_cmd="$run_cmd -b $POLICY_BUNDLE_PATH"
             else
-              echo "ERROR - could not stat << parameters.policy_bundle_file_path >>. Using default policy bundle."
+              echo "ERROR - could not find policy bundle $POLICY_BUNDLE_PATH - using default policy bundle."
             fi
-            run_cmd+=("<< parameters.image_name >>")
+            if [ ! -z $DOCKERFILE_PATH ] && [ -f $DOCKERFILE_PATH ]; then
+              run_cmd="$run_cmd -d $DOCKERFILE_PATH"
+            else
+              echo "ERROR - could not find Dockerfile $DOCKERFILE_PATH - Dockerfile not included in scan."
+            fi
+            run_cmd="$run_cmd $IMAGE_NAME"
             eval $run_cmd
       - parse_reports
       - store_artifacts:

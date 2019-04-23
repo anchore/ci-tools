@@ -42,6 +42,7 @@ jobs:
         command: docker build -t "${CIRCLE_PROJECT_REPONAME}:ci" -f .circleci/Dockerfile .
     - anchore/analyze_local_image:
         image_name: "${CIRCLE_PROJECT_REPONAME}:ci"
+        dockerfile_path: .circleci/Dockerfile
         policy_bundle_file_path: ""
     - anchore/parse_reports
 
@@ -57,6 +58,8 @@ jobs:
     - anchore/analyze_local_image:
         image_name: "${CIRCLE_PROJECT_REPONAME}:policy_fail"
         policy_failure: True
+        dockerfile_path: .circleci/node_critical_fail/Dockerfile
+        policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
     - anchore/parse_reports
 
   custom_policy_pass:
@@ -71,6 +74,8 @@ jobs:
     - anchore/analyze_local_image:
         image_name: "${CIRCLE_PROJECT_REPONAME}:policy_pass"
         policy_failure: True
+        dockerfile_path: .circleci/node_critical_pass/Dockerfile
+        policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
     - anchore/parse_reports
 
   publish_dev_orb:
