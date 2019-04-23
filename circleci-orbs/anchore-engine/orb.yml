@@ -67,6 +67,40 @@ examples:
                 image_name: anchore/anchore-engine:ci
                 timeout: '500'
                 policy_failure: True
+                policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
+                dockerfile_path: ./Dockerfile
+            - anchore/parse_reports
+
+  local_multiple_image_scan:
+    description: |
+      Use the analyze_local_image command within a container build pipeline,
+      it can be used to scan multiple images that haven't been pushed to a registry yet.
+      If Anchore policy evaluation gives 'fail' status, the CI job will be marked
+      as a failure. A custom policy can be used for evaluation, add custom Anchore
+      policy bundle to .circleci/.anchore/policy_bundle.json in your repo. Scanning multiple
+      images does not support passing a dockerfile.
+    usage:
+      version: 2.1
+      orbs:
+        anchore: anchore/anchore-engine@1.3.0
+      jobs:
+        local_image_scan:
+          docker:
+            - image: docker:stable-git
+          steps:
+            - setup_remote_docker
+            - checkout
+            - run:
+                name: build containers
+                command: |
+                  docker build -t "example/test:dev" dev/
+                  docker build -t "example/test:staging" staging/
+                  docker build -t "example/test:latest" prod/
+            - anchore/analyze_local_image:
+                image_name: "example/test:dev example/test:staging example/test:latest"
+                timeout: '500'
+                policy_failure: True
+                policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
             - anchore/parse_reports
 
 executors:
@@ -123,11 +157,9 @@ commands:
       dockerfile_path:
         description: Path to dockerfile used to build image
         type: string
-        default: "${PWD}/Dockerfile"
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: "${PWD}/.circleci/.anchore/policy_bundle.json"
       policy_failure:
         description: Set to True if pipeline should stop on policy evaluation status 'fail'.
         type: boolean
@@ -145,10 +177,10 @@ commands:
           command: |
             set -x
             if [[ ! $(which bash) ]]; then
-              apk add bash
+              (set +o pipefail apk add bash || apt-get install -y bash || yum install -y bash)
             fi
             if [[ ! $(which curl) ]]; then
-              apk add curl
+              (set +o pipefail apk add curl || apt-get install -y curl || yum install -y curl)
             fi 
             POLICY_FAILURE=<< parameters.policy_failure >>
             ANCHORE_VERSION=<< parameters.anchore_version >>
@@ -160,7 +192,7 @@ commands:
             if [ $POLICY_FAILURE ]; then
               run_cmd="$run_cmd -f"
             fi
-            if [ ! -z POLICY_BUNDLE_PATH ] && [ -f $POLICY_BUNDLE_PATH ]; then
+            if [ ! -z $POLICY_BUNDLE_PATH ] && [ -f $POLICY_BUNDLE_PATH ]; then
               run_cmd="$run_cmd -b $POLICY_BUNDLE_PATH"
             else
               echo "ERROR - could not find policy bundle $POLICY_BUNDLE_PATH - using default policy bundle."
@@ -213,6 +245,9 @@ commands:
       - run:
           name: View parsed vulnerability analysis report.
           command: |
+            if [[ $(which jq) ]]; then
+              (set +o pipefail apk add jq || apt-get install -y jq || yum install -y jq)
+            fi
             printf "\n%s\n" "The following OS packages are installed:"
             jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/*-content-os-report.json || true
             printf "\n%s\n" "The following vulnerabilites were found:"
@@ -239,7 +274,8 @@ commands:
       - run:
           name: Evaluate image against desired policy bundle.
           command: |
-            (anchore-cli --json policy add "<< parameters.policy_bundle_file_path >>" | jq '.policyId' | xargs anchore-cli policy activate) > /dev/null || \
+            set +x
+            (anchore-cli --json policy add "<< parameters.policy_bundle_file_path >>" | jq '.policyId' | xargs anchore-cli policy activate) || \
               printf "\n%s\n" "Custom policy bundle not found - << parameters.policy_bundle_file_path >> - using default policy bundle."
             if << parameters.policy_failure >>; then
               anchore-cli evaluate check "<< parameters.image_name >>" --detail

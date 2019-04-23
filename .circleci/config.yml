@@ -43,7 +43,21 @@ jobs:
     - anchore/analyze_local_image:
         image_name: "${CIRCLE_PROJECT_REPONAME}:ci"
         dockerfile_path: .circleci/Dockerfile
-        policy_bundle_file_path: ""
+    - anchore/parse_reports
+  
+  local_images_scan:
+    docker:
+      - image: docker:stable-git
+    steps:
+    - setup_remote_docker
+    - checkout
+    - run:
+        name: build container
+        command: |
+          docker build -t "${CIRCLE_PROJECT_REPONAME}:ci" -f .circleci/Dockerfile .
+          docker build -t "${CIRCLE_PROJECT_REPONAME}:inline ."
+    - anchore/analyze_local_image:
+        image_name: "${CIRCLE_PROJECT_REPONAME}:ci ${CIRCLE_PROJECT_REPONAME}:inline"
     - anchore/parse_reports
 
   custom_policy_fail:
@@ -78,6 +92,7 @@ jobs:
         policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
     - anchore/parse_reports
 
+  
   publish_dev_orb:
     docker:
     - image: circleci/circleci-cli:latest
@@ -262,9 +277,12 @@ workflows:
     - local_image_scan:
         requires:
           - custom_policy_pass
+    - local_images_scan:
+        requires:
+          - custom_policy_pass
     - anchore/image_scan:
         requires:
-          - local_image_scan
+          - local_images_scan
         image_name: 'gcr.io/testing-214322/alpine-test'
         private_registry: true
         registry_name: gcr.io
@@ -272,12 +290,12 @@ workflows:
         registry_pass: "$_gcr_json_key"
     - anchore/image_scan:
         requires:
-          - local_image_scan
+          - local_images_scan
         image_name: 'anchore/anchore-engine:latest'
         policy_bundle_file_path: ""
     - anchore/image_scan:
         requires:
-          - local_image_scan
+          - local_images_scan
         context: dockerhub
         image_name: 'anchore/private_testing:anchore-ui-dev'
         private_registry: True
