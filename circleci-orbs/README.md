@@ -61,6 +61,8 @@ jobs:
           timeout: '500'
           dockerfile_path: ./Dockerfile
       - anchore/parse_reports
+      - store_artifacts:
+          path: anchore-reports
 ```
 
 Put a custom policy bundle in to your repo at .circleci/.anchore/policy_bundle.json
@@ -85,6 +87,8 @@ jobs:
           policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
           dockerfile_path: ./Dockerfile
       - anchore/parse_reports
+      - store_artifacts:
+          path: anchore-reports
 
 Build and scan multiple images, using a custom policy bundle.
 ```
@@ -110,4 +114,6 @@ jobs:
           policy_failure: True
           policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
       - anchore/parse_reports
+      - store_artifacts:
+          path: anchore-reports
 ```

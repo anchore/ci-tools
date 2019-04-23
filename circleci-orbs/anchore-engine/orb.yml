@@ -70,6 +70,8 @@ examples:
                 policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
                 dockerfile_path: ./Dockerfile
             - anchore/parse_reports
+            - store_artifacts:
+                path: anchore-reports
 
   local_multiple_image_scan:
     description: |
@@ -102,6 +104,8 @@ examples:
                 policy_failure: True
                 policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
             - anchore/parse_reports
+            - store_artifacts:
+                path: anchore-reports
 
 executors:
   anchore_engine:
@@ -111,7 +115,7 @@ executors:
     environment:
       ANCHORE_CLI_USER: admin
       ANCHORE_CLI_PASS: foobar
-      ANCHORE_CLI_URL: 'http://localhost:8228/v1/'
+      ANCHORE_CLI_URL: 'http://anchore-engine:8228/v1/'
       ANCHORE_CLI_SSL_VERIFY: 'n'
       ANCHORE_VERSION: v0.3.3
     docker:
@@ -142,7 +146,7 @@ commands:
     steps:
       - run:
           name: Add private registry credentials to anchore engine.
-          command: anchore-cli registry add << parameters.registry_name >> "<< parameters.registry_user >>" "<< parameters.registry_pass >>" --skip-validate
+          command: docker exec -it anchore-engine anchore-cli registry add << parameters.registry_name >> "<< parameters.registry_user >>" "<< parameters.registry_pass >>" --skip-validate
 
   analyze_local_image:
     description: |
@@ -178,10 +182,10 @@ commands:
           name: Scan local image.
           command: |
             set -x
-            if [ ! $(which bash) ]; then
+            if [[ ! $(which bash) ]]; then
               (set +o pipefail; apk add bash || apt-get install -y bash || yum install -y bash)
             fi
-            if [ ! $(which curl) ]; then
+            if [[ ! $(which curl) ]]; then
               (set +o pipefail; apk add curl || apt-get install -y curl || yum install -y curl)
             fi 
             POLICY_FAILURE="<< parameters.policy_failure >>"
@@ -191,24 +195,21 @@ commands:
             DOCKERFILE_PATH="<< parameters.dockerfile_path >>"
             IMAGE_NAME="<< parameters.image_name >>"
             run_cmd="curl -s https://ci-tools.anchore.io/inline_scan-${ANCHORE_VERSION} | bash -s -- -r -t $TIMEOUT"
-            if [ $POLICY_FAILURE ]; then
+            if $POLICY_FAILURE; then
               run_cmd="$run_cmd -f"
             fi
-            if [ ! -z $POLICY_BUNDLE_PATH ] && [ -f $POLICY_BUNDLE_PATH ]; then
+            if [[ ! -z $POLICY_BUNDLE_PATH ]] && [[ -f $POLICY_BUNDLE_PATH ]]; then
               run_cmd="$run_cmd -b $POLICY_BUNDLE_PATH"
             else
               echo "ERROR - could not find policy bundle $POLICY_BUNDLE_PATH - using default policy bundle."
             fi
-            if [ ! -z $DOCKERFILE_PATH ] && [ -f $DOCKERFILE_PATH ]; then
+            if [[ ! -z $DOCKERFILE_PATH ]] && [[ -f $DOCKERFILE_PATH ]]; then
               run_cmd="$run_cmd -d $DOCKERFILE_PATH"
             else
               echo "ERROR - could not find Dockerfile $DOCKERFILE_PATH - Dockerfile not included in scan."
             fi
             run_cmd="$run_cmd $IMAGE_NAME"
-            eval $run_cmd
-      - parse_reports
-      - store_artifacts:
-          path: anchore-reports
+            eval "$run_cmd"
 
   analyze_image:
     description: |
@@ -227,19 +228,19 @@ commands:
       - run:
           name: Analyze image with anchore engine.
           command: |
-            python3 ~/bin/anchore_ci_tools.py --analyze --report --image "<< parameters.image_name >>" --timeout << parameters.timeout >>
-            anchore-cli image get "<< parameters.image_name >>"
+            docker exec -it anchore-engine python3 ~/bin/anchore_ci_tools.py --analyze --report --image "<< parameters.image_name >>" --timeout << parameters.timeout >>
+            docker exec -it anchore-engine anchore-cli image get "<< parameters.image_name >>"
   
   install_tools:
-    description: Install anchore_ci_tools.py
+    description: Install tools & wait for engine
     steps:
       - run:
-          name: Install anchore tools
+          name:
           command: |
-            mkdir ~/bin
-            curl -o ~/bin/anchore_ci_tools.py "https://raw.githubusercontent.com/anchore/ci-tools/${ANCHORE_VERSION}/scripts/anchore_ci_tools.py"
-            chmod +x ~/bin/anchore_ci_tools.py
-            pip3 install --upgrade anchorecli --user
+            docker run -d --name anchore-engine anchore/inline-scan:v0.3.3 start
+      - run:
+          name: Wait for anchore engine
+          command: docker exec -it anchore-engine python3 ~/bin/anchore_ci_tools.py --wait --timeout 300
 
   parse_reports:
     description: Prints analysis report of package vulnerabilities using JQ.
@@ -250,6 +251,7 @@ commands:
             if [[ ! $(which jq) ]]; then
               (set +o pipefail; apk add jq || apt-get install -y jq || yum install -y jq)
             fi
+            # docker cp anchore-engine:anchore-engine/anchore-reports/ ./
             printf "\n%s\n" "The following OS packages are installed:"
             jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/*content-os*.json || true
             printf "\n%s\n" "The following vulnerabilities were found:"
@@ -271,14 +273,19 @@ commands:
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: "~/project/src/.circleci/.anchore/policy_bundle.json"
+        default: ""
     steps:
       - run:
           name: Evaluate image against desired policy bundle.
           command: |
             set +x
-            (anchore-cli --json policy add "<< parameters.policy_bundle_file_path >>" | jq '.policyId' | xargs anchore-cli policy activate) || \
-              printf "\n%s\n" "Custom policy bundle not found - << parameters.policy_bundle_file_path >> - using default policy bundle."
+            BUNDLE_PATH="<< parameters.policy_bundle_file_path >>"
+            if [[ ! -z "$BUNDLE_PATH" ]] && [[ -f "$BUNDLE_PATH" ]]; then
+              (anchore-cli --json policy add "$BUNDLE_PATH" | jq '.policyId' | xargs anchore-cli policy activate) || \
+                printf "\n%s\n" "Failed to activate policy bundle $BUNDLE_PATH - using default policy."
+            else
+              printf "\n%s\n" "Unable to locate policy bundle $BUNDLE_PATH - using default policy."
+            fi
             if << parameters.policy_failure >>; then
               anchore-cli evaluate check "<< parameters.image_name >>" --detail
             else
@@ -339,10 +346,11 @@ jobs:
         type: string
         default: "300"
     steps:
+      - setup_remote_docker
       - checkout:
           path: ~/project/src/
       - when:
-          name: Run after_checkout lifecycle hook steps.
+          name: Run after_checkout life cycle hook steps.
           condition: << parameters.after_checkout >>
           steps: << parameters.after_checkout >>
       - install_tools

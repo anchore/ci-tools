@@ -44,6 +44,8 @@ jobs:
         image_name: "${CIRCLE_PROJECT_REPONAME}:ci"
         dockerfile_path: .circleci/Dockerfile
     - anchore/parse_reports
+    - store_artifacts:
+        path: anchore-reports
   
   local_images_scan:
     docker:
@@ -60,6 +62,8 @@ jobs:
     - anchore/analyze_local_image:
         image_name: "${CIRCLE_PROJECT_REPONAME}:ci ${CIRCLE_PROJECT_REPONAME}:pass ${CIRCLE_PROJECT_REPONAME}:fail"
     - anchore/parse_reports
+    - store_artifacts:
+        path: anchore-reports
 
   custom_policy_fail:
     docker:
@@ -76,6 +80,8 @@ jobs:
         dockerfile_path: .circleci/node_critical_fail/Dockerfile
         policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
     - anchore/parse_reports
+    - store_artifacts:
+        path: anchore-reports
 
   custom_policy_pass:
     docker:
@@ -92,7 +98,8 @@ jobs:
         dockerfile_path: .circleci/node_critical_pass/Dockerfile
         policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
     - anchore/parse_reports
-
+    - store_artifacts:
+        path: anchore-reports
   
   publish_dev_orb:
     docker:
@@ -275,15 +282,13 @@ workflows:
           branches:
             ignore: /.*/
     - custom_policy_pass
-    - local_image_scan:
-        requires:
-          - custom_policy_pass
+    - local_image_scan
     - local_images_scan:
         requires:
           - custom_policy_pass
     - anchore/image_scan:
         requires:
-          - local_images_scan
+          - local_image_scan
         image_name: 'gcr.io/testing-214322/alpine-test'
         private_registry: true
         registry_name: gcr.io
@@ -291,12 +296,12 @@ workflows:
         registry_pass: "$_gcr_json_key"
     - anchore/image_scan:
         requires:
-          - local_images_scan
+          - local_image_scan
         image_name: 'anchore/anchore-engine:latest'
         policy_bundle_file_path: ""
     - anchore/image_scan:
         requires:
-          - local_images_scan
+          - local_image_scan
         context: dockerhub
         image_name: 'anchore/private_testing:anchore-ui-dev'
         private_registry: True

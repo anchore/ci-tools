@@ -191,7 +191,7 @@ start_services() {
 
     echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts
 
-    if [[ ! "$exec_anchore" = "exec" ]] && [[ ! $(ps aux | grep anchore-manager) ]]; then
+    if [[ ! "$exec_anchore" = "exec" ]] && [[ ! $(pgrep anchore-manager) ]]; then
         printf '\n%s\n' "Starting Anchore Engine."
         nohup anchore-manager service start --all &> /var/log/anchore.log &
     fi
