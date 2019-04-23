@@ -32,7 +32,8 @@ commands:
 
 jobs:
   local_image_scan:
-    executor: anchore/anchore_engine
+    docker:
+      - image: docker:stable-git
     steps:
     - setup_remote_docker
     - checkout
@@ -45,7 +46,8 @@ jobs:
     - anchore/parse_reports
 
   custom_policy_fail:
-    executor: anchore/anchore_engine
+    docker:
+      - image: docker:stable-git
     steps:
     - setup_remote_docker
     - checkout
@@ -58,7 +60,8 @@ jobs:
     - anchore/parse_reports
 
   custom_policy_pass:
-    executor: anchore/anchore_engine
+    docker:
+      - image: docker:stable-git
     steps:
     - setup_remote_docker
     - checkout

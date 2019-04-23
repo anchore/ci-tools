@@ -45,7 +45,7 @@ examples:
   local_image_scan:
     description: |
       Use the analyze_local_image command within a container build pipeline,
-      it can be used to scan an image that hasn'tbeen pushed to a registry yet.
+      it can be used to scan an image that hasn't been pushed to a registry yet.
       If Anchore policy evaluation gives 'fail' status, the CI job will be marked
       as a failure. A custom policy can be used for evaluation, add custom Anchore
       policy bundle to .circleci/.anchore/policy_bundle.json in your repo.
@@ -55,7 +55,8 @@ examples:
         anchore: anchore/anchore-engine@1.3.0
       jobs:
         local_image_scan:
-          executor: anchore/anchore_engine
+          docker:
+            - image: docker:stable-git
           steps:
             - setup_remote_docker
             - checkout
@@ -113,8 +114,12 @@ commands:
     description: |
       Pushes a local image to a temporary registry container.
       Image is then scanned with anchore engine. Stores all reports as artifacts.
-      Must be run on executor with docker-compose & sudo.
+      Must be run in job with setup_remote_docker & using an image with docker installed.
     parameters:
+      anchore_version:
+        description: Version of anchore inline-scan image.
+        type: string
+        default: "v0.3.3"
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
@@ -135,18 +140,17 @@ commands:
           name: Scan local image.
           command: |
             set -x
-            docker ps
-            exec_cmd=("docker exec -i anchore-engine docker-entrypoint.sh -r -t << parameters.timeout >>")
+            run_cmd=("curl -s 'https://ci-tools.anchore.io/inline_scan-<< parameters.anchore_version >>' | bash -s -- -r -t << parameters.timeout >>")
             if [[ << parameters.policy_failure >> ]]; then
-              exec_cmd+=("-f")
+              run_cmd+=("-f")
             fi
             if [[ -f << parameters.policy_bundle_file_path >> ]]; then
-              exec_cmd+=("-p << parameters.policy_bundle_file_path >>")
+              run_cmd+=("-p << parameters.policy_bundle_file_path >>")
             else
               echo "ERROR - could not stat << parameters.policy_bundle_file_path >>. Using default policy bundle."
             fi
-            exec_cmd+=("-i << parameters.image_name >>")
-            docker save << parameters.image_name >> | (eval $exec_cmd)
+            run_cmd+=("<< parameters.image_name >>")
+            eval $run_cmd
       - parse_reports
       - store_artifacts:
           path: anchore-reports
