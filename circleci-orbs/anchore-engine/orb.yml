@@ -156,7 +156,7 @@ commands:
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: ~/project/.circleci/.anchore/policy_bundle.json
+        default: ${HOME}/project/.circleci/.anchore/policy_bundle.json
       policy_failure:
         description: Set to True if pipeline should stop on policy evaluation status 'fail'.
         type: boolean
@@ -278,7 +278,7 @@ commands:
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: ~/project/.circleci/.anchore/policy_bundle.json
+        default: ${HOME}/project/.circleci/.anchore/policy_bundle.json
     steps:
       - run:
           name: Evaluate image against desired policy bundle.
@@ -326,7 +326,7 @@ jobs:
       policy_bundle_file_path:
         description: Specify file path to policy bundle.
         type: string
-        default: ~/project/.circleci/.anchore/policy_bundle.json
+        default: ${HOME}/project/.circleci/.anchore/policy_bundle.json
       policy_failure:
         description: Set to True if pipeline should stop on policy evaluation status 'fail'.
         type: boolean
