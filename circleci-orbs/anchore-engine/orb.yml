@@ -50,6 +50,7 @@ examples:
       If Anchore policy evaluation gives 'fail' status, the CI job will be marked
       as a failure. A custom policy can be used for evaluation, add custom Anchore
       policy bundle to .circleci/.anchore/policy_bundle.json in your repository.
+      The Dockerfile used for building your image can be passed for policy evaluation.
     usage:
       version: 2.1
       orbs:
@@ -137,7 +138,7 @@ commands:
     steps:
       - run:
           name: Add private registry credentials to anchore engine.
-          command: docker exec -it anchore-engine anchore-cli registry add << parameters.registry_name >> "<< parameters.registry_user >>" "<< parameters.registry_pass >>" --skip-validate
+          command: docker exec -it anchore-engine anchore-cli registry add "<< parameters.registry_name >>" "<< parameters.registry_user >>" "<< parameters.registry_pass >>" --skip-validate
 
   analyze_local_image:
     description: |
