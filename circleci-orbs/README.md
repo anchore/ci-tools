@@ -88,6 +88,7 @@ jobs:
       - anchore/parse_reports
       - store_artifacts:
           path: anchore-reports
+```
 
 Build and scan multiple images, using a custom policy bundle.
 ```
