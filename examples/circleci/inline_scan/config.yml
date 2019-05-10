@@ -1,0 +1,33 @@
+version: 2.1
+jobs:
+  build_scan_image:
+    docker:
+    - image: docker:stable
+    environment:
+      IMAGE_NAME: anchore/anchore-ci-demo
+      IMAGE_TAG: circleci
+    steps:
+    - checkout
+    - setup_remote_docker
+    - run:
+        name: Build image
+        command: docker build -t "${IMAGE_NAME}:ci" .
+    - run:
+        name: Scan image
+        command: |
+          apk add curl bash
+          curl -s https://ci-tools.anchore.io/inline_scan-v0.3.3 | bash -s -- -r "${IMAGE_NAME}:ci"
+    - run:
+        name: Push to Dockerhub
+        command: |
+          echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+          docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:${IMAGE_TAG}"
+          docker push "${IMAGE_NAME}:${IMAGE_TAG}"
+    - store_artifacts:
+        path: anchore-reports/
+  
+workflows:
+  scan_image:
+    jobs:
+    - build_scan_image:
+        context: dockerhub

@@ -1,0 +1,11 @@
+- name: build-scan
+  service: anchore
+  command: sh -c 'apk add bash curl &&
+    mkdir -p /build && 
+    cd /build &&
+    git clone https://github.com/anchore/ci-tools.git . &&
+    docker build -t "${IMAGE_NAME}:ci" . &&
+    curl -s https://ci-tools.anchore.io/inline_scan-v0.3.3 | bash -s -- -f -b ./.anchore_policy.json "${IMAGE_NAME}:ci" &&
+    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin &&
+    docker tag "${IMAGE_NAME}:ci" "${IMAGE_NAME}:${IMAGE_TAG}" &&
+    docker push "${IMAGE_NAME}:${IMAGE_TAG}"'

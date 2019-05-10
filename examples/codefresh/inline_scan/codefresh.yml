@@ -1,0 +1,45 @@
+version: '1.0'
+steps:
+  build_docker_image:
+    title: Building Docker Image
+    type: build
+    image_name: ${{IMAGE_NAME}}
+    tag: ci
+    working_directory: ./
+    dockerfile: Dockerfile
+
+  anchore_scan:
+    type: composition
+    title: Scanning with Anchore Engine
+    composition:
+      version: '2'
+      services:
+        anchore-engine:
+          image: anchore/inline-scan:latest
+          ports:
+            - 8228
+          command: bash -c 'docker-entrypoint.sh start &> /dev/null'
+    composition_candidates:
+      scan_image:
+        image: anchore/inline-scan:latest
+        links:
+          - anchore-engine
+        environment:
+          - ANCHORE_CLI_URL=http://anchore-engine:8228/v1/
+          - IMAGE_NAME=${{IMAGE_NAME}}
+          - IMAGE_TAG=${{IMAGE_TAG}}
+          - DOCKER_USER=${{DOCKER_USER}}
+          - DOCKER_PASS=${{DOCKER_PASS}}
+        command: bash -xc 'anchore-cli system wait && anchore-cli registry add r.cfcr.io $DOCKER_USER $DOCKER_PASS --skip-validate && anchore_ci_tools.py -a --timeout 500 --image r.cfcr.io/anchore/${IMAGE_NAME}:ci'
+    composition_variables:
+      - IMAGE_NAME=${{IMAGE_NAME}}
+      - IMAGE_TAG=${{IMAGE_TAG}}
+      - DOCKER_USER=${{DOCKER_USER}}
+      - DOCKER_PASS=${{DOCKER_PASS}}
+
+  push_to_registry:
+    title: Pushing to Docker Registry 
+    type: push
+    candidate: '${{build_docker_image}}'
+    tag: ${{IMAGE_TAG}}
+    registry: dockerhub

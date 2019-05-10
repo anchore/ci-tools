@@ -1,0 +1,7 @@
+anchore:
+  add_docker: true
+  image: docker:stable-git
+  environment:
+    IMAGE_NAME: anchore/anchore-ci-demo
+    IMAGE_TAG: codeship
+  encrypted_env_file: env.encrypted
