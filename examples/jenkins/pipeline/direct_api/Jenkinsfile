@@ -1,0 +1,189 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+
+pipeline {
+  agent any
+
+  stages {
+    stage('Anchore Scan') {
+      environment {
+        ANCHORE_ENGINE_URL = "http://192.168.1.146:8228/v1"
+        ANCHORE_ENGINE_CREDENTIALS = credentials('anchore-engine-credentials') // Jenkins credentials reference
+        ANCHORE_ENGINE_POLICY_BUNDLE_ID = "" // if left blank, anchore engine defaults to active bundle for policy evaluation
+        ANCHORE_ENGINE_ANALYSIS_TIMEOUT_MINUTES = 5 // time in minutes to wait for analysis to complete
+        ANCHORE_ENGINE_SLEEP_SECONDS = 5 // wait time in seconds between retries
+        ANCHORE_ENGINE_VULNERABILITIES = "anchore_vulnerabilities_report.json"
+        ANCHORE_ENGINE_POLICY_EVALUATION = "anchore_policy_evaluation_report.json"
+        ANCHORE_ENGINE_CONTENT_PREFIX = "anchore_content_report_"
+
+        TAG_TO_BE_ANALYZED = "docker.io/library/alpine:latest"
+      }
+      steps {
+        script {
+          node {
+            echo "Starting Anchore Scan Stage"
+
+            def output = "anchore_curl_output"
+            def curler = "curl -ks -w '%{http_code}' -u ${ANCHORE_ENGINE_CREDENTIALS}"
+            def error_msg = ""
+
+            // Add image for analysis. parse digest and analysis state from response
+            echo "Adding ${TAG_TO_BE_ANALYZED} to Anchore Engine for analysis"
+            def request_body = JsonOutput.toJson([tag: "${TAG_TO_BE_ANALYZED}"])
+            def cmd = "${curler} -o ${output} -X POST -H 'Content-Type: application/json' -d '${request_body}' '${ANCHORE_ENGINE_URL}/images?autosubscribe=false'"
+            // echo "cli: ${cmd}"
+            def http_status = sh script: cmd, returnStdout: true
+            http_status = http_status.trim().toInteger()
+            if (http_status != 200 && http_status != 202) {
+              error_msg = readFile(file: output)
+              error "Failed to add ${TAG_TO_BE_ANALYZED} to Anchore Engine for analysis. HTTP status: ${http_status}, message: ${error_msg}"
+            }
+            def analysis_response_json = readFile(file: output)
+            def analysis_response_map = new JsonSlurper().parseText(analysis_response_json).get(0)
+            def image_digest = analysis_response_map.imageDigest
+            def analysis_status = analysis_response_map.analysis_status
+            analysis_response_map = null // unset to avoid serialization error
+            echo "Received image digest: ${image_digest}, analysis status: ${analysis_status}"
+
+            // Get image and check status
+            cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}'"
+            echo "Checking analysis status for image digest ${image_digest}"
+            timeout (time: "${ANCHORE_ENGINE_ANALYSIS_TIMEOUT_MINUTES}", unit: 'MINUTES') {
+              while (true) {
+                http_status = sh script: cmd, returnStdout: true
+                http_status = http_status.trim().toInteger()
+                if (http_status != 200 && http_status != 202) {
+                  error_msg = readFile(file: output)
+                  error "Failed to get image info from Anchore Engine. HTTP status: ${http_status}, message: ${error_msg}"
+                }
+                def image_response_json = readFile(file: output)
+                def image_response_map = new JsonSlurper().parseText(image_response_json).get(0)
+                def image_status = image_response_map.analysis_status
+                image_response_map = null // unset to avoid serialization error
+                if (image_status == 'analyzed') {
+                  echo "Image analyzed"
+                  break
+                } else if (image_status == 'analyzing' || image_status == 'not_analyzed') {
+                  echo "Image status is ${image_status}, will retry after ${ANCHORE_ENGINE_SLEEP_SECONDS} seconds"
+                  sleep time: "${ANCHORE_ENGINE_SLEEP_SECONDS}", unit: 'SECONDS'
+                } else {
+                  error "Failed due to image status ${image_status}"
+                }
+              }
+            }
+
+            // Fetching all reports
+            echo "Fetching all reports for image digest ${image_digest}"
+            def report_gen_error = false
+
+            // Get vuln report
+            echo "Fetching vulnerability listing"
+            output = "${ANCHORE_ENGINE_VULNERABILITIES}"
+            cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/vuln/all'"
+            http_status = sh script: cmd, returnStdout: true
+            http_status = http_status.trim().toInteger()
+            if (http_status != 200 && http_status != 202) {
+              report_gen_error = true
+              error_msg = readFile(file: output)
+              echo "ERROR: Failed to get vulnerabilities listing from Anchore Engine. HTTP status: ${http_status}, message: ${error_msg}"
+            }
+
+            // Get policy evaluation report
+            echo "Fetching policy evaluation"
+            output = "${ANCHORE_ENGINE_POLICY_EVALUATION}"
+            try { // check for environment variable. this is hacky but there does not seem to be a better way for checking environment variables
+              cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/check?bundle_id=${ANCHORE_ENGINE_POLICY_BUNDLE_ID}&tag=${TAG_TO_BE_ANALYZED}&detail=true'"
+            } catch (e) {
+              cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/check?tag=${TAG_TO_BE_ANALYZED}&detail=true'"
+            }
+            http_status = sh script: cmd, returnStdout: true
+            http_status = http_status.trim().toInteger()
+            if (http_status != 200 && http_status != 202) {
+              report_gen_error = true
+              error_msg = readFile(file: output)
+              echo "ERROR: Failed to get policy evaluation from Anchore Engine. HTTP status: ${http_status}, message: ${error_msg}"
+            }
+
+            // Get os image content
+            echo "Fetching os content"
+            output = "${ANCHORE_ENGINE_CONTENT_PREFIX}os.json"
+            cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/content/os'"
+            http_status = sh script: cmd, returnStdout: true
+            http_status = http_status.trim().toInteger()
+            if (http_status != 200 && http_status != 202) {
+              report_gen_error = true
+              error_msg = readFile(file: output)
+              echo "ERROR: Failed to get os content from Anchore Engine. HTTP status: ${http_status}, message: ${error_msg}"
+            }
+
+            // Get files image content
+            echo "Fetching files content"
+            output = "${ANCHORE_ENGINE_CONTENT_PREFIX}files.json"
+            cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/content/files'"
+            http_status = sh script: cmd, returnStdout: true
+            http_status = http_status.trim().toInteger()
+            if (http_status != 200 && http_status != 202) {
+              report_gen_error = true
+              error_msg = readFile(file: output)
+              echo "ERROR: Failed to get files content from Anchore Engine. HTTP status: ${http_status}, message: ${error_msg}"
+            }
+
+            // Get npm image content
+            echo "Fetching npm content"
+            output = "${ANCHORE_ENGINE_CONTENT_PREFIX}npm.json"
+            cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/content/npm'"
+            http_status = sh script: cmd, returnStdout: true
+            http_status = http_status.trim().toInteger()
+            if (http_status != 200 && http_status != 202) {
+              report_gen_error = true
+              error_msg = readFile(file: output)
+              echo "ERROR: Failed to get npm content from Anchore Engine. HTTP status: ${http_status}, message: ${error_msg}"
+            }
+
+            // Get gem image content
+            echo "Fetching gem content"
+            output = "${ANCHORE_ENGINE_CONTENT_PREFIX}gem.json"
+            cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/content/gem'"
+            http_status = sh script: cmd, returnStdout: true
+            http_status = http_status.trim().toInteger()
+            if (http_status != 200 && http_status != 202) {
+              report_gen_error = true
+              error_msg = readFile(file: output)
+              echo "ERROR: Failed to get gem content from Anchore Engine. HTTP status: ${http_status}, message: ${error_msg}"
+            }
+
+            // Get python image content
+            echo "Fetching python content"
+            output = "${ANCHORE_ENGINE_CONTENT_PREFIX}python.json"
+            cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/content/python'"
+            http_status = sh script: cmd, returnStdout: true
+            http_status = http_status.trim().toInteger()
+            if (http_status != 200 && http_status != 202) {
+              report_gen_error = true
+              error_msg = readFile(file: output)
+              echo "ERROR: Failed to get python content from Anchore Engine. HTTP status: ${http_status}, message: ${error_msg}"
+            }
+
+            // Get java image content
+            echo "Fetching java content"
+            output = "${ANCHORE_ENGINE_CONTENT_PREFIX}java.json"
+            cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/content/java'"
+            http_status = sh script: cmd, returnStdout: true
+            http_status = http_status.trim().toInteger()
+            if (http_status != 200 && http_status != 202) {
+              report_gen_error = true
+              error_msg = readFile(file: output)
+              echo "ERROR: Failed to get java content from Anchore Engine. HTTP status: ${http_status}, message: ${error_msg}"
+            }
+
+            if (report_gen_error) {
+              error "Failed to get one or more reports from Anchore Engine, check above logs for errors"
+            }
+
+            echo "Completed Anchore Scan Stage"
+          } // node
+        } // script
+      } // steps
+    } // stage
+  } // stages
+} // pipeline
