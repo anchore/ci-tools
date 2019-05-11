@@ -1,3 +1,21 @@
+// Jenkinsfile example for Anchore Engine compliance and security analysis of a container image in a docker v2 registry.
+// This example expects Anchore Engine installed and available over the network. It uses curl to interact with Anchore Engine API directly
+//
+// Configure the environment section accordingly before using this snippet in your Jenkins Pipeline.
+// Successful run produces the following artifacts in the Jenkins workspace. Use Jenkins archive step (not included) to persist these artifacts.
+// Ensure proper cleanup of these artifacts before running the snippet or use some combination of Jenkins job name and build ID in file path of the
+// generated artifacts to avoid conflicting with other build results
+//
+// - anchore_vulnerabilities_report.json
+// - anchore_policy_evaluation_report.json
+// - anchore_content_report_os.json
+// - anchore_content_report_files.json
+// - anchore_content_report_npm.json
+// - anchore_content_report_gem.json
+// - anchore_content_report_python.json
+// - anchore_content_report_java.json
+
+
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 
