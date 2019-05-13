@@ -131,7 +131,7 @@ main() {
         fi
     else
         for i in $(find /anchore-engine -type f); do
-            if [[ $(skopeo inspect "docker-archive:${i}" 2> /dev/null) ]] && [[ ! "${SCAN_FILES[@]}" =~ "$i" ]]; then 
+            if [[ $(skopeo inspect "docker-archive:${i}") ]] && [[ ! "${SCAN_FILES[@]}" =~ "$i" ]]; then 
                 SCAN_FILES+=("$i")
                 printf '\t%s\n' "Found docker archive:  $i"
             else 
@@ -187,30 +187,31 @@ start_services() {
     export ANCHORE_DB_HOST="$ANCHORE_ENDPOINT_HOSTNAME"
     export ANCHORE_HOST_ID="$ANCHORE_ENDPOINT_HOSTNAME"
     export ANCHORE_CLI_URL="http://${ANCHORE_ENDPOINT_HOSTNAME}:8228/v1"
-    export PATH=${PATH}:/usr/lib/postgresql/${PG_MAJOR}/bin/
+    export PATH=${PATH}:/usr/pgsql-${PG_MAJOR}/bin/
 
-    echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts
+    if [ -f "/opt/rh/rh-python36/enable" ]; then
+    source /opt/rh/rh-python36/enable
+    fi
 
     if [[ ! "$exec_anchore" = "exec" ]] && [[ ! $(pgrep anchore-manager) ]]; then
-        printf '\n%s\n' "Starting Anchore Engine."
+        echo "Starting Anchore Engine..."
         nohup anchore-manager service start --all &> /var/log/anchore.log &
     fi
     
-    if [[ ! $(gosu postgres pg_isready -d postgres --quiet) ]]; then
-        echo "Starting Postgresql."
-        touch /var/log/postgres.log && chown postgres:postgres /var/log/postgres.log
-        nohup gosu postgres bash -c 'postgres &> /var/log/postgres.log &' &> /dev/null
-        sleep 3 && gosu postgres pg_isready -d postgres --quiet && echo "Postgresql started successfully!"
+    if [[ ! $(pg_isready -d postgres --quiet) ]]; then
+        printf '%s' "Starting Postgresql... "
+        nohup bash -c 'postgres &> /var/log/postgres.log &' &> /dev/null
+        sleep 3 && pg_isready -d postgres --quiet && printf '%s\n' "Postgresql started successfully!"
     fi
 
     if [[ ! $(curl --silent "${ANCHORE_ENDPOINT_HOSTNAME}:5000") ]]; then
-        echo "Starting Docker registry."
+        printf '%s' "Starting Docker registry... "
         nohup registry serve /etc/docker/registry/config.yml &> /var/log/registry.log &
-        curl --silent --retry 3 --retry-connrefused "${ANCHORE_ENDPOINT_HOSTNAME}:5000" && echo "Docker registry started successfully!"
+        sleep 3 && curl --silent --retry 3 "${ANCHORE_ENDPOINT_HOSTNAME}:5000" && printf '%s\n' "Docker registry started successfully!"
     fi
 
     if [[ "$exec_anchore" = "exec" ]]; then
-        echo "Starting Anchore Engine."
+        echo "Starting Anchore Engine..."
         exec anchore-manager service start --all
     fi
 }
