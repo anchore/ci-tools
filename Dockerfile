@@ -1,4 +1,4 @@
-ARG ANCHORE_VERSION
+ARG ANCHORE_VERSION="dev"
 FROM anchore/anchore-engine:${ANCHORE_VERSION}
 
 RUN set -ex; \

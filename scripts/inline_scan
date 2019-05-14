@@ -61,11 +61,9 @@ cleanup() {
     done
     
     if [[ "${#IMAGE_FILES[@]}" -ge 1 ]]; then
-        for file in "${IMAGE_FILES[@]}"; do
-            if [[ -f "$file" ]]; then
-                rm -f "/tmp/${file}"
-            fi
-        done
+        if [[ -d "/tmp/anchore" ]]; then
+            rm -rf "/tmp/anchore"
+        fi
     fi
 
     exit "$ret"
@@ -248,7 +246,8 @@ else
         if [[ "$v_flag" ]]; then
             save_file_path="${VOLUME_PATH}/${save_file_name}"
         else
-            save_file_path="/tmp/${save_file_name}"
+            mkdir -p /tmp/anchore
+            save_file_path="/tmp/anchore/${save_file_name}"
         fi
 
         # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
