@@ -118,11 +118,13 @@ jobs:
         command: |
           git clone git@github.com:anchore/anchore-engine.git
           pushd anchore-engine
-          export ANCHORE_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
+          # export ANCHORE_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
+          export ANCHORE_VERSION=v0.3.3
           popd
           rm -rf anchore-engine
           echo "ANCHORE_VERSION=$ANCHORE_VERSION" | tee >(sed 's/.*=//' > anchore_version.txt) | cat
-          export CI_TOOLS_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
+          # export CI_TOOLS_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
+          export CI_TOOLS_VERSION=v0.3.3
           echo "CI_TOOLS_VERSION=$CI_TOOLS_VERSION" | tee >(sed 's/.*=//' > ci_tools_version.txt) | cat
           scripts/build_image.sh
     - pull_test_image:
@@ -221,13 +223,15 @@ jobs:
         command: |
           git clone git@github.com:anchore/anchore-engine.git
           pushd anchore-engine
-          export ANCHORE_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
+          # export ANCHORE_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
+          ANCHORE_VERSION=v0.3.3
           popd
           rm -rf anchore-engine
           echo "ANCHORE_VERSION=$ANCHORE_VERSION" | tee >(sed 's/.*=//' > anchore_version.txt) | cat
-          export CI_TOOLS_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
+          # export CI_TOOLS_VERSION=$(git describe --tag --abbrev=0 --exclude "*rc*")
+          export CI_TOOLS_VERSION=v0.3.3
           echo "CI_TOOLS_VERSION=$CI_TOOLS_VERSION" | tee >(sed 's/.*=//' > ci_tools_version.txt) | cat
-          git checkout "$CI_TOOLS_VERSION"
+          # git checkout "$CI_TOOLS_VERSION"
           scripts/build_image.sh
     - pull_test_image:
         image_names: "('alpine:latest' 'java:latest' 'anchore/inline-scan:latest' 'centos:latest' 'nginx:latest')"
