@@ -1,11 +1,14 @@
 # Define YAML anchors
+attach_workspace: &attach_workspace
+  attach_workspace:
+    at: /home/circleci/workspace/
 
 # load_docker_images step requires code checkout prior to running
 load_docker_images: &load_docker_images
   run:
     name: Load Docker image layer cache
     command: |
-      cp -f .circleci/build_versions.txt /home/circleci/workspace/build_versions.txt
+      set -x
       # TEST NIGHTLY BUILD - REMOVE BEFORE MERGING
       export NIGHTLY_BUILD=true
       if [[ "$NIGHTLY_BUILD" = "true" ]]; then
@@ -16,9 +19,6 @@ load_docker_images: &load_docker_images
           docker load -i "/home/circleci/workspace/caches/${CIRCLE_PROJECT_REPONAME}-dev.tar"
       fi
       cd -
-attach_workspace: &attach_workspace
-  attach_workspace:
-    at: /home/circleci/workspace/
 
 version: 2.1
 orbs:
@@ -114,12 +114,11 @@ jobs:
     - checkout
     - run:
         name: Build and Save Images
-        command: ./build.sh build_and_save_images << parameters.anchore_version >>
+        command: scripts/build.sh build_and_save_images << parameters.anchore_version >>
     - persist_to_workspace:
         root: /home/circleci/workspace/
         paths:
           - caches/*
-          - versions.txt
 
   test_inline_script:
     docker:
@@ -130,7 +129,7 @@ jobs:
     - <<: *attach_workspace
     - run:
         name: Test Inline Script
-        command: ./build.sh run_inline_tests
+        command: scripts/build.sh run_inline_tests
 
   push_dockerhub:
     parameters:
@@ -141,23 +140,29 @@ jobs:
       - image: circleci/python:3.6
     steps:
     - setup_remote_docker
-    - checkout
     - <<: *attach_workspace
     - <<: *load_docker_images
     - run:
         name: Load & Push Image to DockerHub
-        command: ./build.sh load_image_and_push_dockerhub << parameters.anchore_version >>
+        command: scripts/build.sh load_image_and_push_dockerhub << parameters.anchore_version >>
 
 workflows:
   default_workflow:
     jobs:
-    - build_stateless_image_dev:
+    - build_stateless_image:
+        name: build_stateless_dev
         anchore_version: dev
-    - push_dockerhub_dev:
+    - test_inline_script:
+        name: test_inline_dev
+        anchore_version: dev
+        requires:
+          - build_stateless_dev
+    - push_dockerhub:
+        name: push_stateless_dev
         anchore_version: dev
         context: dockerhub
         requires:
-          - test_inline_script_dev
+          - test_inline_dev
     - build_stateless_image:
         filters:
           # ignore any commit on any branch by default
