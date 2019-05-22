@@ -1,24 +1,7 @@
 # Define YAML anchors
 attach_workspace: &attach_workspace
   attach_workspace:
-    at: /home/circleci/workspace/
-
-# load_docker_images step requires code checkout prior to running
-load_docker_images: &load_docker_images
-  run:
-    name: Load Docker image layer cache
-    command: |
-      set -x
-      # TEST NIGHTLY BUILD - REMOVE BEFORE MERGING
-      export NIGHTLY_BUILD=true
-      if [[ "$NIGHTLY_BUILD" = "true" ]]; then
-          for version in $(cat /home/circleci/workspace/build_versions.txt); do
-              docker load -i "/home/circleci/workspace/caches/${CIRCLE_PROJECT_REPONAME}-${version}-dev.tar"
-          done
-      else
-          docker load -i "/home/circleci/workspace/caches/${CIRCLE_PROJECT_REPONAME}-dev.tar"
-      fi
-      cd -
+    at: ./workspace/
 
 version: 2.1
 orbs:
@@ -116,11 +99,15 @@ jobs:
         name: Build and Save Images
         command: scripts/build.sh build_and_save_images << parameters.anchore_version >>
     - persist_to_workspace:
-        root: /home/circleci/workspace/
+        root: ./workspace/
         paths:
           - caches/*
 
   test_inline_script:
+    parameters:
+      anchore_version: 
+        default: ""
+        type: string
     docker:
       - image: circleci/python:3.6
     steps:
@@ -129,7 +116,7 @@ jobs:
     - <<: *attach_workspace
     - run:
         name: Test Inline Script
-        command: scripts/build.sh run_inline_tests
+        command: scripts/build.sh test_built_images << parameters.anchore_version >>
 
   push_dockerhub:
     parameters:
@@ -141,7 +128,6 @@ jobs:
     steps:
     - setup_remote_docker
     - <<: *attach_workspace
-    - <<: *load_docker_images
     - run:
         name: Load & Push Image to DockerHub
         command: scripts/build.sh load_image_and_push_dockerhub << parameters.anchore_version >>
@@ -164,6 +150,7 @@ workflows:
         requires:
           - test_inline_dev
     - build_stateless_image:
+        name: build_stateless_latest
         filters:
           # ignore any commit on any branch by default
           branches:
@@ -172,24 +159,26 @@ workflows:
           tags:
             only: /^v[0-9]+(\.[0-9]+)*$/
     - test_inline_script:
+        name: test_inline_latest
         requires:
-          - build_stateless_image
+          - build_stateless_latest
         filters:
           branches:
             ignore: /.*/
           tags:
             only: /^v[0-9]+(\.[0-9]+)*$/
     - push_dockerhub:
+        name: push_stateless_latest
         context: dockerhub
         requires:
-          - test_inline_script
+          - test_inline_latest
         filters:
           branches:
             ignore: /.*/
           tags:
             only: /^v[0-9]+(\.[0-9]+)*$/
 
-  test_orb:
+  test_orb_nightly:
     triggers:
       - schedule:
           cron: "0 14 * * *"
@@ -234,11 +223,14 @@ workflows:
               only:
                 - master
     jobs:
-    - build_stateless_image
+    - build_stateless_image:
+        name: build_stateless_nightly
     - test_inline_script:
+        name: test_inline_nightly
         requires:
-          - build_stateless_image
+          - build_stateless_nightly
     - push_dockerhub:
+        name: push_stateless_nightly
         context: dockerhub
         requires:
-          - test_inline_script
+          - test_inline_nightly
