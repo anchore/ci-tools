@@ -127,6 +127,7 @@ jobs:
       - image: circleci/python:3.6
     steps:
     - setup_remote_docker
+    - checkout
     - <<: *attach_workspace
     - run:
         name: Load & Push Image to DockerHub

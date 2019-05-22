@@ -254,8 +254,9 @@ ci_test_job() {
     export DOCKER_NAME="${RANDOM:-TEMP}-ci-test"
     docker run --net host -it --name "$DOCKER_NAME" -v "${WORKING_DIRECTORY}:${WORKING_DIRECTORY}" -v /var/run/docker.sock:/var/run/docker.sock "$ci_image" /bin/sh -c "\
         cd ${WORKING_DIRECTORY} && \
+        cp scripts/build.sh /tmp/build.sh && \
         export WORKING_DIRECTORY=${WORKING_DIRECTORY} && \
-        sudo -E bash scripts/build.sh $ci_function \
+        sudo -E bash /tmp/build.sh $ci_function \
     "
     docker stop "$DOCKER_NAME" && docker rm "$DOCKER_NAME"
 }
