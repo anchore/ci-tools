@@ -70,12 +70,14 @@ cleanup() {
     if [[ "$SKIP_FINAL_CLEANUP" == false ]]; then
         deactivate 2> /dev/null
         docker-compose down --volumes 2> /dev/null
-        if [[ ! -z "$db_preload_id" ]]; then
-            docker kill "$db_preload_id" 2> /dev/null
-            docker rm "$db_preload_id" 2> /dev/null
+        if [[ "${DOCKER_RUN_IDS[@]}" -ne 0 ]]; then
+            for i in "${DOCKER_RUN_IDS[@]}"; do
+                docker kill "$i" 2> /dev/null
+                docker rm "$i" 2> /dev/null
+            done
         fi
         popd &> /dev/null
-        rm -rf "$WORKING_DIRECTORY" anchore-bootstrap.sql.gz anchore-reports/
+        rm -rf "$WORKING_DIRECTORY"
     fi
     popd &> /dev/null
     exit "$ret"
@@ -102,10 +104,10 @@ main() {
 #################################################################
 
 build_and_save_images() {
-    local anchore_version="${1:-all}"
+    local build_version="${1:-all}"
     setup_build_environment
     # Loop through build_versions.txt and build images for every specified version
-    if [[ "$anchore_version" == 'all' ]]; then
+    if [[ "$build_version" == 'all' ]]; then
         for version in ${BUILD_VERSIONS[@]}; do
             echo "Building ${IMAGE_REPO}:dev-${version}"
             git checkout "tags/${version}"
@@ -126,7 +128,7 @@ build_and_save_images() {
 test_built_images() {
     local build_version="${1:-all}"
     setup_build_environment
-    if [[ "$anchore_version" == 'all' ]]; then
+    if [[ "$build_version" == 'all' ]]; then
         for version in ${BUILD_VERSIONS[@]}; do
             unset ANCHORE_CI_IMAGE
             export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${version}"
@@ -171,8 +173,10 @@ build_image() {
     fi
     docker pull "anchore/engine-db-preload:${anchore_version}"
     echo "Copying anchore-bootstrap.sql.gz from anchore/engine-db-preload:${anchore_version} image..."
-    db_preload_id=$(docker run -d --entrypoint tail "docker.io/anchore/engine-db-preload:${anchore_version}" /dev/null | tail -n1)
-    docker cp "${db_preload_id}:/docker-entrypoint-initdb.d/anchore-bootstrap.sql.gz" "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
+    docker_name="${RANDOM:-temp}-db-preload"
+    docker run -d --name "$docker_name" --entrypoint tail "docker.io/anchore/engine-db-preload:${anchore_version}" /dev/null | tail -n1
+    docker cp "${docker_name}:/docker-entrypoint-initdb.d/anchore-bootstrap.sql.gz" "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
+    DOCKER_RUN_IDS+=("$(docker inspect $docker_name | jq '.[].Id')")
     # If $dev is set to 'true' build with anchore-engine:dev - $dev defaults to false
     if ${dev:-false}; then
         # REMOVE BUILD-ARG WHEN DOCKERFILE GETS UPDATED FOR v0.4.0
@@ -181,6 +185,7 @@ build_image() {
         docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
         docker tag "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-${version}"
     fi
+    rm -f "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
 }
 
 install_dependencies() {
@@ -249,14 +254,15 @@ test_inline_script() {
 ci_test_job() {
     local ci_image=$1
     local ci_function=$2
-    export DOCKER_NAME="${RANDOM:-TEMP}-ci-test"
-    docker run --net host -it --name "$DOCKER_NAME" -v "${WORKING_DIRECTORY}:${WORKING_DIRECTORY}" -v /var/run/docker.sock:/var/run/docker.sock "$ci_image" /bin/sh -c "\
+    local docker_name="${RANDOM:-TEMP}-ci-test"
+    docker run --net host -it --name "$docker_name" -v "${WORKING_DIRECTORY}:${WORKING_DIRECTORY}" -v /var/run/docker.sock:/var/run/docker.sock "$ci_image" /bin/sh -c "\
         cd ${WORKING_DIRECTORY} && \
         cp scripts/build.sh /tmp/build.sh && \
         export WORKING_DIRECTORY=${WORKING_DIRECTORY} && \
         sudo -E bash /tmp/build.sh $ci_function \
     "
-    docker stop "$DOCKER_NAME" && docker rm "$DOCKER_NAME"
+    docker stop "$docker_name" && docker rm "$docker_name"
+    DOCKER_RUN_IDS+=("$(docker inspect $docker_name | jq '.[].Id')")
 }
 
 load_image() {
@@ -335,6 +341,9 @@ setup_and_print_env_vars() {
     if [[ "$CI" == false ]]; then
         sleep 5
     fi
+    # Setup a variable for docker image cleanup at end of script
+    declare -a DOCKER_RUN_IDS
+    export DOCKER_RUN_IDS
     # Trap all bash commands & print to screen. Like using set -v but allows printing in color
     trap 'printf "%s+ %s%s\n" "${color_cyan}" "${BASH_COMMAND}" "${color_normal}" >&2' DEBUG
 }
