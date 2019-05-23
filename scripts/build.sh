@@ -102,53 +102,58 @@ main() {
 #################################################################
 
 build_and_save_images() {
-    anchore_version="${1:-nil}"
+    local anchore_version="${1:-all}"
     setup_build_environment
     # Loop through build_versions.txt and build images for every specified version
-    if [[ "$anchore_version" == 'dev' ]]; then
-        echo "Buiding ${IMAGE_REPO}:dev"
-        build_image dev
-        test_inline_image dev
-        save_image dev
-    else
+    if [[ "$anchore_version" == 'all' ]]; then
         for version in ${BUILD_VERSIONS[@]}; do
             echo "Building ${IMAGE_REPO}:dev-${version}"
             git checkout "tags/${version}"
             build_image "$version"
             test_inline_image "$version"
             save_image "$version"
+            # Move back to previously checked out branch
+            git checkout @{-1}
         done
+    else
+        echo "Buiding ${IMAGE_REPO}:${build_version}"
+        build_image "$build_version"
+        test_inline_image "$build_version"
+        save_image "$build_version"
     fi
 }
 
 test_built_images() {
-    anchore_version="${1:-nil}"
+    local build_version="${1:-all}"
     setup_build_environment
-    if [[ "$anchore_version" == 'dev' ]]; then
-        export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev"
-        test_bulk_image_volume dev
-        test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/master/scripts/inline_scan"
-    else
+    if [[ "$anchore_version" == 'all' ]]; then
         for version in ${BUILD_VERSIONS[@]}; do
             unset ANCHORE_CI_IMAGE
             export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${version}"
-            git checkout "tags/${anchore_version}"
-            test_bulk_image_volume ${anchore_version}
+            git checkout "tags/${version}"
+            test_bulk_image_volume ${version}
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${version}/scripts/inline_scan"
+            # Move back to previously checked out branch
+            git checkout @{-1}
         done
+    else
+        export ANCHORE_CI_IMAGE="${IMAGE_REPO}:${build_version}"
+        test_bulk_image_volume "$build_version"
+        test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/master/scripts/inline_scan"
     fi
 }
 
 load_image_and_push_dockerhub() {
-    anchore_version="${1:-nil}"
-    if [[ "$1" == 'dev' ]]; then
-        load_image dev
-        push_dockerhub dev
-    else
+    local build_version="${1:-all}"
+    setup_build_environment
+    if [[ "$build_version" == 'all' ]]; then
         for version in ${BUILD_VERSIONS[@]}; do
             load_image "$version"
             push_dockerhub "$version"
         done
+    else
+        load_image "$build_version"
+        push_dockerhub "$build_version"
     fi
 }
 
@@ -178,6 +183,11 @@ build_image() {
     fi
 }
 
+install_dependencies() {
+    # No dependencies to install for this project
+    true
+}
+
 pull_test_images() {
     local img_array=("$@")
     mkdir -p "${WORKSPACE}/images"
@@ -188,22 +198,11 @@ pull_test_images() {
     done
 }
 
-setup_build_environment() {
-    # Copy source code to $WORKING_DIRECTORY for mounting to docker volume as working dir
-    if [[ ! -d "$WORKING_DIRECTORY" ]]; then
-        mkdir -p "$WORKING_DIRECTORY"
-        cp -a . "$WORKING_DIRECTORY"
-    fi
-    mkdir -p "${WORKSPACE}/caches"
-    pushd "$WORKING_DIRECTORY"
-}
-
 test_bulk_image_volume() {
     local anchore_version="$1"
     if [[ "$anchore_version" == 'dev' ]]; then
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev"
     else
-        git checkout "tags/${anchore_version}"
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${anchore_version}"
     fi
     if [[ "$CI" == 'true' ]]; then
@@ -222,7 +221,6 @@ test_inline_image() {
     if [[ "$anchore_version" == 'dev' ]]; then
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev"
     else
-        git checkout "tags/${anchore_version}"
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${anchore_version}"
     fi
     cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -d ".circleci/Dockerfile" -b ".circleci/.anchore/policy_bundle.json" -p -r node
@@ -339,6 +337,17 @@ setup_and_print_env_vars() {
     fi
     # Trap all bash commands & print to screen. Like using set -v but allows printing in color
     trap 'printf "%s+ %s%s\n" "${color_cyan}" "${BASH_COMMAND}" "${color_normal}" >&2' DEBUG
+}
+
+setup_build_environment() {
+    # Copy source code to $WORKING_DIRECTORY for mounting to docker volume as working dir
+    if [[ ! -d "$WORKING_DIRECTORY" ]]; then
+        mkdir -p "$WORKING_DIRECTORY"
+        cp -a . "$WORKING_DIRECTORY"
+    fi
+    mkdir -p "${WORKSPACE}/caches"
+    pushd "$WORKING_DIRECTORY"
+    install_dependencies || true
 }
 
 ########################################
