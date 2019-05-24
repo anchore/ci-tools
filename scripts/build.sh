@@ -120,12 +120,12 @@ build_and_save_images() {
         for version in ${BUILD_VERSIONS[@]}; do
             echo "Building ${IMAGE_REPO}:dev-${version}"
             git stash
-            git checkout "tags/${version}"
+            git checkout "tags/${version}" || true
             build_image "$version"
             test_inline_image "$version"
             save_image "$version"
             # Move back to previously checked out branch
-            git checkout @{-1}
+            git checkout @{-1} || true
         done
     else
         echo "Buiding ${IMAGE_REPO}:${build_version}"
@@ -143,11 +143,11 @@ test_built_images() {
             unset ANCHORE_CI_IMAGE
             export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${version}"
             git stash
-            git checkout "tags/${version}"
+            git checkout "tags/${version}" || true
             test_bulk_image_volume ${version}
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${version}/scripts/inline_scan"
             # Move back to previously checked out branch
-            git checkout @{-1}
+            git checkout @{-1} || true
         done
     else
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${build_version}"
@@ -366,7 +366,7 @@ trap 'printf "\n%s+ PIPELINE ERROR - exit code %s - cleaning up %s\n" "${color_r
 # If running on test-infra container ci_utils.sh is installed to /usr/local/bin/
 # if [[ -f /usr/local/bin/ci_utils.sh ]]; then
 #     source ci_utils.sh
-# elif [[ -f "${WORKSPACE}/test-infra" ]]; then
+# elif [[ -f "${WORKSPACE}/test-infra/scripts/ci_utils.sh" ]]; then
 #     source "${WORKSPACE}/test-infra/scripts/ci_utils.sh"
 # else
 #     git clone https://github.com/anchore/test-infra "${WORKSPACE}/test-infra"

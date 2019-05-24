@@ -1,7 +1,7 @@
 # Define YAML anchors
 attach_workspace: &attach_workspace
   attach_workspace:
-    at: ./workspace/
+    at: /home/circleci/workspace/
 
 version: 2.1
 orbs:
@@ -99,7 +99,7 @@ jobs:
         name: Build and Save Images
         command: scripts/build.sh build_and_save_images << parameters.anchore_version >>
     - persist_to_workspace:
-        root: ./workspace/
+        root: /home/circleci/workspace/
         paths:
           - caches/*
 
