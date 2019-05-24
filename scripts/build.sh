@@ -23,7 +23,7 @@ display_usage() {
         build - Build a dev image tagged IMAGE_REPO:dev'
         ci - Run mocked CircleCI pipeline using Docker-in-Docker
         function_name - Invoke a function directly using build environment
-        dev_test - Run test pipeline on latest code locally on your workstation
+        dev - Run test pipeline on latest code locally on your workstation
         main - Run full ci pipeline locally on your workstation
 EOF
     echo "${color_normal}"
@@ -34,8 +34,8 @@ EOF
 ##############################################
 
 # Specify what versions to build & what version should get 'latest' tag
-export BUILD_VERSIONS=('v0.3.3')
-export LATEST_VERSION='v0.3.3'
+export BUILD_VERSIONS=('v0.3.3' 'v0.3.4')
+export LATEST_VERSION='v0.3.4'
 
 set_environment_variables() {
     # PROJECT_VARS are custom vars that are modified between projects
@@ -128,12 +128,15 @@ build_and_save_images() {
         for version in ${BUILD_VERSIONS[@]}; do
             echo "Building ${IMAGE_REPO}:dev-${version}"
             git stash
-            git checkout "tags/${version}" || true
+            git checkout "tags/${version}" || { if [[ "$CI" == 'false' ]]; then true && local no_tag=true; else exit 1; fi; };
             build_image "$version"
             test_inline_image "$version"
             save_image "$version"
             # Move back to previously checked out branch
-            git checkout @{-1} || true
+            if ! "${no_tag:=false}"; then
+                git checkout @{-1}
+            fi
+            unset no_tag
         done
     else
         echo "Buiding ${IMAGE_REPO}:${build_version}"
@@ -151,11 +154,14 @@ test_built_images() {
             unset ANCHORE_CI_IMAGE
             export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${version}"
             git stash
-            git checkout "tags/${version}"
+            git checkout "tags/${version}" || { if [[ "$CI" == 'false' ]]; then true && local no_tag=true; else exit 1; fi; };
             test_bulk_image_volume ${version}
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${version}/scripts/inline_scan"
             # Move back to previously checked out branch
-            git checkout @{-1}
+            if ! "${no_tag:=false}"; then
+                git checkout @{-1}
+            fi
+            unset no_tag
         done
     else
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${build_version}"
@@ -190,9 +196,9 @@ load_image_and_push_dockerhub() {
 build_image() {
     if [[ "$1" == 'dev' ]]; then
         # local anchore_version='latest'
-        # REMOVE v0.3.3 and dev when Dockerfile gets updated for v0.4.0
+        # REMOVE v0.3.4 and dev when Dockerfile gets updated for v0.4.0
         local dev=true
-        local anchore_version='v0.3.3'
+        local anchore_version='v0.3.4'
     else
         local anchore_version="$1"
     fi
@@ -203,7 +209,7 @@ build_image() {
     DOCKER_RUN_IDS+=("$db_preload_id")
     # REMOVE DEV CHECK WHEN DOCKERFILE GETS UPDATED FOR v0.4.0
     if ${dev:-false}; then
-        docker build --build-arg "ANCHORE_VERSION=v0.3.3" -t "${IMAGE_REPO}:dev" .
+        docker build --build-arg "ANCHORE_VERSION=v0.3.4" -t "${IMAGE_REPO}:dev" .
         docker tag "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-dev"
     else
         docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
@@ -284,7 +290,7 @@ ci_test_job() {
     local ci_image=$1
     local ci_function=$2
     local docker_name="${RANDOM:-TEMP}-ci-test"
-    docker run --net host -it --name "$docker_name" -v $(dirname "$WORKING_DIRECTORY"):$(dirname "$WORKING_DIRECTORY") -v /var/run/docker.sock:/var/run/docker.sock "$ci_image" /bin/sh -c "\
+    docker run --net host -it --name "$docker_name" -v $(dirname "$WORKING_DIRECTORY"):$(dirname "$WORKING_DIRECTORY"):delegated -v /var/run/docker.sock:/var/run/docker.sock "$ci_image" /bin/sh -c "\
         cd $(dirname "$WORKING_DIRECTORY") && \
         cp ${WORKING_DIRECTORY}/scripts/build.sh $(dirname "$WORKING_DIRECTORY")/build.sh && \
         export WORKING_DIRECTORY=${WORKING_DIRECTORY} && \
@@ -406,6 +412,8 @@ if [[ "$#" -eq 0 ]]; then
     exit 1
 elif [[ "$1" == 'build' ]];then
     build
+elif [[ "$1" == 'dev' ]];then
+    dev_test
 elif [[ "$1" == 'test' ]]; then
     main
 elif [[ "$1" == 'ci' ]]; then
