@@ -16,7 +16,8 @@ display_usage() {
         
         SKIP_CLEANUP = [ true | false ] - skips cleanup job that runs on exit (kills containers & removes workspace)
         IMAGE_REPO = docker.io/example/test - specify a custom image repo to build/test
-        WORKING_DIRECTORY = /home/test/workspace - used as a temporary workspace for build/test
+        WORKING_DIRECTORY = /home/test/workdir - used as a temporary workspace for build/test
+        WORKSPACE = /home/test/workspace - used to store temporary artifacts
 
     Usage: ${0##*/} <build> <test> <ci> <function_name>  [ function_args ] [ ... ] 
         
@@ -152,6 +153,7 @@ test_built_images() {
     if [[ "$build_version" == 'all' ]]; then
         for version in ${BUILD_VERSIONS[@]}; do
             unset ANCHORE_CI_IMAGE
+            load_image "$version"
             export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${version}"
             git stash
             git checkout "tags/${version}" || { if [[ "$CI" == 'false' ]]; then true && local no_tag=true; else exit 1; fi; };
@@ -164,6 +166,7 @@ test_built_images() {
             unset no_tag
         done
     else
+        load_image "$build_version"
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${build_version}"
         test_bulk_image_volume "$build_version"
         if [[ "$build_version" == dev ]]; then
@@ -240,18 +243,12 @@ pull_test_images() {
 
 test_bulk_image_volume() {
     local anchore_version="$1"
-    if [[ "$anchore_version" == 'dev' ]]; then
-        export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev"
-    else
-        export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${anchore_version}"
-    fi
     if [[ "$CI" == 'true' ]]; then
         mkdir -p ${WORKSPACE}/images
         ssh remote-docker "mkdir -p ${WORKSPACE}/scripts"
         if [[ "$anchore_version" == 'v0.3.3' ]]; then
-            git checkout master
+            git checkout master scripts/build.sh
             scp scripts/build.sh remote-docker:"${WORKSPACE}/scripts/build.sh"
-            git checkout @{-1}
         else
             scp scripts/build.sh remote-docker:"${WORKSPACE}/scripts/build.sh"
         fi
@@ -264,11 +261,6 @@ test_bulk_image_volume() {
 
 test_inline_image() {
     local anchore_version="$1"
-    if [[ "$anchore_version" == 'dev' ]]; then
-        export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev"
-    else
-        export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${anchore_version}"
-    fi
     cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -p alpine:latest
 }
 
