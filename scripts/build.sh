@@ -21,9 +21,10 @@ display_usage() {
     Usage: ${0##*/} <build> <test> <ci> <function_name>  [ function_args ] [ ... ] 
         
         build - Build a dev image tagged IMAGE_REPO:dev'
-        test - Run test pipeline locally on your workstation
         ci - Run mocked CircleCI pipeline using Docker-in-Docker
         function_name - Invoke a function directly using build environment
+        dev_test - Run test pipeline on latest code locally on your workstation
+        main - Run full ci pipeline locally on your workstation
 EOF
     echo "${color_normal}"
 }
@@ -33,8 +34,8 @@ EOF
 ##############################################
 
 # Specify what versions to build & what version should get 'latest' tag
-export BUILD_VERSIONS=('v0.3.3' 'v0.3.4')
-export LATEST_VERSION='v0.3.4'
+export BUILD_VERSIONS=('v0.3.3')
+export LATEST_VERSION='v0.3.3'
 
 set_environment_variables() {
     # PROJECT_VARS are custom vars that are modified between projects
@@ -84,9 +85,10 @@ cleanup() {
             done
         fi
         popd &> /dev/null
-        rm -rf "${WORKING_DIRECTORY%/project}"
+        rm -rf "$(dirname $WORKING_DIRECTORY)"
     else
         echo "Workspace Dir: $WORKSPACE"
+        echo "Working Dir: $WORKING_DIRECTORY"
     fi
     popd &> /dev/null
     exit "$ret"
@@ -102,6 +104,12 @@ ci_test_run_workflow() {
 
 # The main() function represents the full CI pipeline flow, can be used to run the test pipeline locally
 main() {
+    build_and_save_images
+    test_built_images
+    load_image_and_push_dockerhub
+}
+
+dev_test() {
     build_and_save_images dev
     test_built_images dev
     load_image_and_push_dockerhub dev
@@ -143,11 +151,11 @@ test_built_images() {
             unset ANCHORE_CI_IMAGE
             export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${version}"
             git stash
-            git checkout "tags/${version}" || true
+            git checkout "tags/${version}"
             test_bulk_image_volume ${version}
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${version}/scripts/inline_scan"
             # Move back to previously checked out branch
-            git checkout @{-1} || true
+            git checkout @{-1}
         done
     else
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${build_version}"
@@ -190,11 +198,9 @@ build_image() {
     fi
     docker pull "anchore/engine-db-preload:${anchore_version}"
     echo "Copying anchore-bootstrap.sql.gz from anchore/engine-db-preload:${anchore_version} image..."
-    local docker_name="${RANDOM:-temp}-db-preload"
-    docker run -d --name "$docker_name" --entrypoint tail "docker.io/anchore/engine-db-preload:${anchore_version}" /dev/null | tail -n1
-    docker cp "${docker_name}:/docker-entrypoint-initdb.d/anchore-bootstrap.sql.gz" "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
-    local docker_id=$(docker inspect $docker_name | jq '.[].Id')
-    DOCKER_RUN_IDS+=("$docker_id")
+    db_preload_id=$(docker run -d --entrypoint tail "docker.io/anchore/engine-db-preload:${anchore_version}" /dev/null | tail -n1)
+    docker cp "${db_preload_id}:/docker-entrypoint-initdb.d/anchore-bootstrap.sql.gz" "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
+    DOCKER_RUN_IDS+=("$db_preload_id")
     # REMOVE DEV CHECK WHEN DOCKERFILE GETS UPDATED FOR v0.4.0
     if ${dev:-false}; then
         docker build --build-arg "ANCHORE_VERSION=v0.3.3" -t "${IMAGE_REPO}:dev" .
@@ -203,6 +209,11 @@ build_image() {
         docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
         docker tag "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-${anchore_version}"
     fi
+    local docker_name="${RANDOM:-temp}-db-preload"
+    docker run -it --name "$docker_name" "${IMAGE_REPO}:dev" debug /bin/bash -c "anchore-cli system wait --feedsready 'vulnerabilities,nvd' && anchore-cli system status && anchore-cli system feeds list"
+    local docker_id=$(docker inspect $docker_name | jq '.[].Id')
+    docker kill "$docker_id" && docker rm "$docker_id"
+    DOCKER_RUN_IDS+=("$docker_id")
     rm -f "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
 }
 
@@ -274,13 +285,13 @@ ci_test_job() {
     local ci_function=$2
     local docker_name="${RANDOM:-TEMP}-ci-test"
     docker run --net host -it --name "$docker_name" -v $(dirname "$WORKING_DIRECTORY"):$(dirname "$WORKING_DIRECTORY") -v /var/run/docker.sock:/var/run/docker.sock "$ci_image" /bin/sh -c "\
-        cd ${WORKING_DIRECTORY} && \
-        cp scripts/build.sh ${WORKING_DIRECTORY%/project}/build.sh && \
+        cd $(dirname "$WORKING_DIRECTORY") && \
+        cp ${WORKING_DIRECTORY}/scripts/build.sh $(dirname "$WORKING_DIRECTORY")/build.sh && \
         export WORKING_DIRECTORY=${WORKING_DIRECTORY} && \
-        sudo -E bash ${WORKING_DIRECTORY%/project}/build.sh $ci_function \
+        sudo -E bash $(dirname "$WORKING_DIRECTORY")/build.sh $ci_function \
     "
-    docker stop "$docker_name" && docker rm "$docker_name"
     local docker_id=$(docker inspect $docker_name | jq '.[].Id')
+    docker kill "$docker_id" && docker rm "$docker_id"
     DOCKER_RUN_IDS+=("docker_id")
 }
 
