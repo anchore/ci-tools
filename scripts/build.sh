@@ -248,7 +248,13 @@ test_bulk_image_volume() {
     if [[ "$CI" == 'true' ]]; then
         mkdir -p ${WORKSPACE}/images
         ssh remote-docker "mkdir -p ${WORKSPACE}/scripts"
-        scp scripts/build.sh remote-docker:"${WORKSPACE}/scripts/build.sh"
+        if [[ "$anchore_version" == 'v0.3.3' ]]; then
+            git checkout master
+            scp scripts/build.sh remote-docker:"${WORKSPACE}/scripts/build.sh"
+            git checkout @{-1}
+        else
+            scp scripts/build.sh remote-docker:"${WORKSPACE}/scripts/build.sh"
+        fi
         ssh remote-docker "WORKSPACE=$WORKSPACE ${WORKSPACE}/scripts/build.sh pull_test_images alpine:latest java:latest nginx:latest"
     else
         pull_test_images java:latest nginx:latest ubuntu:latest
