@@ -35,8 +35,8 @@ EOF
 ##############################################
 
 # Specify what versions to build & what version should get 'latest' tag
-export BUILD_VERSIONS=('v0.3.3' 'v0.3.4')
-export LATEST_VERSION='v0.3.4'
+export BUILD_VERSIONS=('v0.3.3' 'v0.3.4' 'v0.4.0')
+export LATEST_VERSION='v0.4.0'
 
 set_environment_variables() {
     # PROJECT_VARS are custom vars that are modified between projects
@@ -198,10 +198,7 @@ load_image_and_push_dockerhub() {
 
 build_image() {
     if [[ "$1" == 'dev' ]]; then
-        # local anchore_version='latest'
-        # REMOVE v0.3.4 and dev when Dockerfile gets updated for v0.4.0
-        local dev=true
-        local anchore_version='v0.3.4'
+        local anchore_version='latest'
     else
         local anchore_version="$1"
     fi
@@ -210,14 +207,8 @@ build_image() {
     db_preload_id=$(docker run -d --entrypoint tail "docker.io/anchore/engine-db-preload:${anchore_version}" /dev/null | tail -n1)
     docker cp "${db_preload_id}:/docker-entrypoint-initdb.d/anchore-bootstrap.sql.gz" "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
     DOCKER_RUN_IDS+=("$db_preload_id")
-    # REMOVE DEV CHECK WHEN DOCKERFILE GETS UPDATED FOR v0.4.0
-    if ${dev:-false}; then
-        docker build --build-arg "ANCHORE_VERSION=v0.3.4" -t "${IMAGE_REPO}:dev" .
-        docker tag "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-dev"
-    else
-        docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
-        docker tag "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-${anchore_version}"
-    fi
+    docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
+    docker tag "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-${anchore_version}"
     local docker_name="${RANDOM:-temp}-db-preload"
     docker run -it --name "$docker_name" "${IMAGE_REPO}:dev" debug /bin/bash -c "anchore-cli system wait --feedsready 'vulnerabilities,nvd' && anchore-cli system status && anchore-cli system feeds list"
     local docker_id=$(docker inspect $docker_name | jq '.[].Id')
@@ -309,7 +300,8 @@ push_dockerhub() {
     if [[ "$CI" == true ]]; then
         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
     fi
-    if [[ "$GIT_BRANCH" == 'master' ]] && [[ "$CI" == true ]] && [[ ! "$anchore_version" == 'dev' ]]; then
+    # Push :latest or :[semver] tags to Dockerhub if on 'master' branch or a vX.X semver tag, and running in CircleCI
+    if [[ "$GIT_BRANCH" == 'master' || "${CIRCLE_TAG:=false}" =~ '^v[0-9]+(\.[0-9]+)*$' ]] && [[ "$CI" == true ]] && [[ ! "$anchore_version" == 'dev' ]]; then
         docker tag "${IMAGE_REPO}:dev-${anchore_version}" "${IMAGE_REPO}:${anchore_version}"
         echo "Pushing to DockerHub - ${IMAGE_REPO}:${anchore_version}"
         docker push "${IMAGE_REPO}:${anchore_version}"
