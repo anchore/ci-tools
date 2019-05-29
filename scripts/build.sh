@@ -51,7 +51,7 @@ set_environment_variables() {
     # These vars are static & defaults should not need to be changed
     PROJECT_VARS+=( \
         "CI=${CI:=false}" \
-        "GIT_BRANCH=${CIRCLE_BRANCH:=$(git rev-parse --abbrev-ref HEAD)}" \
+        "GIT_BRANCH=${CIRCLE_BRANCH:=$(git rev-parse --abbrev-ref HEAD || echo 'dev')}" \
         "SKIP_FINAL_CLEANUP=${SKIP_FINAL_CLEANUP:=false}" \
     )
     setup_and_print_env_vars
