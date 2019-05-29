@@ -240,13 +240,13 @@ test_bulk_image_volume() {
         mkdir -p ${WORKSPACE}/images
         ssh remote-docker "mkdir -p ${WORKSPACE}/scripts"
         if [[ "$anchore_version" == 'v0.3.3' ]]; then
-            git checkout master scripts/build.sh
+            git checkout v0.3.4 scripts/build.sh
             scp scripts/build.sh remote-docker:"${WORKSPACE}/scripts/build.sh"
         else
             scp scripts/build.sh remote-docker:"${WORKSPACE}/scripts/build.sh"
         fi
         ssh remote-docker "WORKSPACE=$WORKSPACE ${WORKSPACE}/scripts/build.sh pull_test_images alpine:latest java:latest nginx:latest"
-        ssh remote-docker "chmod -R +r ${WORKSPACE}/images" 
+        ssh remote-docker "chmod -R +r ${WORKSPACE}/images"
     else
         pull_test_images java:latest nginx:latest ubuntu:latest
     fi
@@ -397,9 +397,10 @@ set_environment_variables
 # Trap all bash commands & print to screen. Like using set -v but allows printing in color
 trap 'printf "%s+ %s%s\n" "${color_cyan}" "$BASH_COMMAND" "${color_normal}" >&2' DEBUG
 
-# If no params are passed to script, build the image
-# Run script with the 'test' param to execute the full pipeline locally
-# Run script with the 'ci' param to execute a fully mocked CircleCI pipeline, running in docker
+# Run script with the 'build' param to build the image
+# Run script with the 'dev' param to execute the pipeline locally on just the latest version
+# Run script with the 'test' param to execute the full pipeline locally on all versions
+# Run script with the 'ci' param to execute a fully mocked CircleCI pipeline, utilizing docker in docker
 # If first param is a valid function name, execute the function & pass all following params to function
 if [[ "$#" -eq 0 ]]; then
     display_usage >&2
