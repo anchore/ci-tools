@@ -23,7 +23,6 @@ RUN set -ex; \
     chmod +x /usr/local/bin/jq; \
     chmod +x /usr/local/bin/gosu; \
 	rm -rf "$GNUPGHOME" /usr/local/bin/gosu.asc /usr/local/bin/jq.asc; \
-    chown anchore:anchore /anchore-engine; \
     rm -rf /anchore-engine/* /root/.cache /config/config.yaml /docker-entrypoint.sh
 
 ENV PG_MAJOR="9.6"
@@ -82,14 +81,16 @@ RUN set -eux; \
     touch /var/log/registry.log; \
     chown anchore:anchore /var/log/registry.log
 
+ENV ANCHORE_ENDPOINT_HOSTNAME="localhost"
+RUN set -eux; \
+    echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts; \
+    touch /var/log/anchore.log; \
+    chown anchore:anchore /var/log/anchore.log; \ 
+    chown anchore:anchore /anchore-engine
+
 COPY conf/stateless_ci_config.yaml /config/config.yaml
 COPY scripts/anchore_ci_tools.py /usr/local/bin/
 COPY scripts/docker-entrypoint.sh /usr/local/bin/
-
-ENV ANCHORE_ENDPOINT_HOSTNAME="localhost"
-RUN echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts; \
-    touch /var/log/anchore.log; \
-    chown anchore:anchore /var/log/anchore.log
 
 USER anchore:anchore
 WORKDIR /anchore-engine

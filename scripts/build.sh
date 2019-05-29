@@ -51,7 +51,7 @@ set_environment_variables() {
     # These vars are static & defaults should not need to be changed
     PROJECT_VARS+=( \
         "CI=${CI:=false}" \
-        "GIT_BRANCH=${CIRCLE_BRANCH:=dev}" \
+        "GIT_BRANCH=${CIRCLE_BRANCH:=$(git rev-parse --abbrev-ref HEAD)}" \
         "SKIP_FINAL_CLEANUP=${SKIP_FINAL_CLEANUP:=false}" \
     )
     setup_and_print_env_vars
@@ -170,7 +170,7 @@ test_built_images() {
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${build_version}"
         test_bulk_image_volume "$build_version"
         if [[ "$build_version" == dev ]]; then
-            test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/master/scripts/inline_scan"
+            test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${GIT_BRANCH}/scripts/inline_scan"
         else
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${build_version}/scripts/inline_scan"
         fi
