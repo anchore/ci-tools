@@ -135,6 +135,7 @@ build_and_save_images() {
             save_image "$version"
             # Move back to previously checked out branch
             if ! "${no_tag:=false}"; then
+                git stash
                 git checkout @{-1}
             fi
             unset no_tag
@@ -161,6 +162,7 @@ test_built_images() {
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${version}/scripts/inline_scan"
             # Move back to previously checked out branch
             if ! "${no_tag:=false}"; then
+                git stash
                 git checkout @{-1}
             fi
             unset no_tag
