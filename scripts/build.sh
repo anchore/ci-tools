@@ -128,14 +128,14 @@ build_and_save_images() {
     if [[ "$build_version" == 'all' ]]; then
         for version in ${BUILD_VERSIONS[@]}; do
             echo "Building ${IMAGE_REPO}:dev-${version}"
-            git stash
+            git reset --hard
             git checkout "tags/${version}" || { if [[ "$CI" == 'false' ]]; then true && local no_tag=true; else exit 1; fi; };
             build_image "$version"
             test_inline_image "$version"
             save_image "$version"
             # Move back to previously checked out branch
             if ! "${no_tag:=false}"; then
-                git stash
+                git reset --hard
                 git checkout @{-1}
             fi
             unset no_tag
@@ -156,13 +156,13 @@ test_built_images() {
             unset ANCHORE_CI_IMAGE
             load_image "$version"
             export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${version}"
-            git stash
+            git reset --hard
             git checkout "tags/${version}" || { if [[ "$CI" == 'false' ]]; then true && local no_tag=true; else exit 1; fi; };
             test_bulk_image_volume ${version}
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${version}/scripts/inline_scan"
             # Move back to previously checked out branch
             if ! "${no_tag:=false}"; then
-                git stash
+                git reset --hard
                 git checkout @{-1}
             fi
             unset no_tag
