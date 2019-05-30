@@ -79,7 +79,7 @@ cleanup() {
     if [[ "$SKIP_FINAL_CLEANUP" == false ]]; then
         deactivate 2> /dev/null
         docker-compose down --volumes 2> /dev/null
-        if [[ "${DOCKER_RUN_IDS[@]}" -ne 0 ]]; then
+        if [[ "${#DOCKER_RUN_IDS[@]}" -ne 0 ]]; then
             for i in "${DOCKER_RUN_IDS[@]}"; do
                 docker kill $i 2> /dev/null
                 docker rm $i 2> /dev/null
