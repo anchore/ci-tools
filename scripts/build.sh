@@ -19,13 +19,13 @@ display_usage() {
         WORKING_DIRECTORY = /home/test/workdir - used as a temporary workspace for build/test
         WORKSPACE = /home/test/workspace - used to store temporary artifacts
 
-    Usage: ${0##*/} <build> <test> <ci> <function_name>  [ function_args ] [ ... ] 
+    Usage: ${0##*/} <build> <test> <dev> <ci> <function_name>  [ function_args ] [ ... ] 
         
         build - Build a dev image tagged IMAGE_REPO:dev'
         ci - Run mocked CircleCI pipeline using Docker-in-Docker
         function_name - Invoke a function directly using build environment
         dev - Run test pipeline on latest code locally on your workstation
-        main - Run full ci pipeline locally on your workstation
+        test - Run full ci pipeline locally on your workstation
 EOF
     echo "${color_normal}"
 }
@@ -307,7 +307,7 @@ push_dockerhub() {
         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
     fi
     # Push :latest or :[semver] tags to Dockerhub if on 'master' branch or a vX.X semver tag, and running in CircleCI
-    if [[ "$GIT_BRANCH" == 'master' || "${CIRCLE_TAG:=false}" =~ '^v[0-9]+(\.[0-9]+)*$' ]] && [[ "$CI" == true ]] && [[ ! "$anchore_version" == 'dev' ]]; then
+    if [[ "$GIT_BRANCH" == 'master' || "${CIRCLE_TAG:=false}" =~ ^v[0-9]+(\.[0-9]+)*$ ]] && [[ "$CI" == true ]] && [[ ! "$anchore_version" == 'dev' ]]; then
         docker tag "${IMAGE_REPO}:dev-${anchore_version}" "${IMAGE_REPO}:${anchore_version}"
         echo "Pushing to DockerHub - ${IMAGE_REPO}:${anchore_version}"
         docker push "${IMAGE_REPO}:${anchore_version}"
