@@ -8,24 +8,50 @@ INLINE_SCAN_IMAGE="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:v0.4.1}"
 
 display_usage() {
 cat << EOF
-  
+
 Anchore Engine Inline Scan --
 
   Wrapper script for performing vulnerability analysis on local docker images, utilizing Anchore Engine inline_scan container.  
-  
+
   Images should be built & tagged locally, or remote images can be pulled with the -p option.
 
-  
-  Usage: ${0##*/} [ -f ] [ -p ] [ -r ] [ -t 300 ] [ -v ./anchore_images ] [ -d ./Dockerfile ] [ -b ./policy.json ] [ IMAGE_ONE ] [ IMAGE_TWO ] [ ... ]
+    Usage: ${0##*/} [ -f ] [ -p ] [ -r ] [ -t 300 ] [ -v ./anchore_images ] [ -d ./Dockerfile ] [ -b ./policy.json ] [ IMAGE_ONE ] [ IMAGE_TWO ] [ ... ]
 
-      -b  [optional] Path to local Anchore policy bundle.
-      -d  [optional] Path to local Dockerfile.
-      -v  [optional] Path to directory to be mounted as docker volume. All image archives in directory will be scanned.
-      -f  [optional] Exit script upon failed Anchore policy evaluation.
-      -p  [optional] Pull remote docker images.
-      -r  [optional] Generate analysis reports in your current working directory.
-      -t  [optional] Specify timeout for image scanning in seconds (defaults to 300s).
- 
+      -b  [optional] Path to local Anchore policy bundle
+      -d  [optional] Path to local Dockerfile
+      -v  [optional] Path to directory to be mounted as docker volume. All image archives in directory will be scanned
+      -f  [optional] Exit script upon failed Anchore policy evaluation
+      -p  [optional] Pull remote docker images
+      -r  [optional] Generate analysis reports in your current working directory
+      -t  [optional] Specify timeout for image scanning in seconds (defaults to 300s)
+
+EOF
+}
+
+display_usage_analyzer() {
+cat << EOF
+
+Anchore Engine Inline Analyzer --
+
+  Wrapper script for performing analysis on local docker images, utilizing Anchore Engine analyzer subsystem.
+  After image is analyzed, the resulting Anchore image archive is sent to a remote Anchore Engine installation
+  using the -u <URL> option.
+
+  Images should be built & tagged locally.
+
+    Usage: ${0##*/} -h <URL> -u <USER> -p <PASSWORD> [ OPTIONS ] <FULL_IMAGE_TAG>
+
+      -h <TEXT> [required] URL to remote Anchore Engine API endpoint host (ex: -h 'https://anchore.example.com:8228/v1')
+      -u <TEXT> [required] Username for remote Anchore Engine auth (ex: -u 'admin')
+      -p <TEXT> [required] Password for remote Anchore Engine auth (ex: -p 'foobar')
+
+      -a <TEXT> [optional] Add annotations (ex: -a 'key=value,key=value')
+      -d <PATH> [optional] Specify image digest (ex: -d 'sha256:<64 hex characters>')
+      -f <PATH> [optional] Path to Dockerfile (ex: -f ./Dockerfile)
+      -i <TEXT> [optional] Specify image ID within Anchore Engine (ex: -i '<64 hex characters>')
+      -m <PATH> [optional] Path to Docker image manifest (ex: -m ./manifest.json)
+      -p <TEXT> [optional] Specify parent image digest (ex: -p 'sha256:<64 hex characters>')
+
 EOF
 }
 
