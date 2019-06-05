@@ -1,0 +1,88 @@
+description: |
+  Performs a static security analysis of docker container with anchore engine.
+  A custom policy can be used for evaluation, add custom Anchore policy bundle
+  to .circleci/.anchore/policy_bundle.json in your repository. Anchore engine pulls
+  image from public/private docker registries. Requires registry credentials
+  to access private images, use ENV vars $DOCKER_USER & $DOCKER_PASS
+
+executor: anchore_engine
+
+parameters:
+  after_checkout:
+    description: Optional steps to run after checking out the code.
+    type: steps
+    default: []
+  before_analyze:
+    description: Optional steps to run before analyzing the docker image.
+    type: steps
+    default: []
+  after_analyze:
+    description: Optional steps to run after analyzing the docker image.
+    type: steps
+    default: []
+  image_name:
+    description: Image repository & tag (eg - docker.io/anchore/anchore-engine:latest).
+    type: string
+  policy_bundle_file_path:
+    description: Specify file path to policy bundle.
+    type: string
+    default: ${HOME}/project/.circleci/.anchore/policy_bundle.json
+  policy_failure:
+    description: Set to True if pipeline should stop on policy evaluation status 'fail'.
+    type: boolean
+    default: False
+  private_registry:
+    description: Set to True if image is only accessible from a private registry.
+    type: boolean
+    default: False
+  registry_name:
+    description: Name of private registry (eg - docker.io)
+    type: string
+    default: docker.io
+  registry_user:
+    description: Username for private registry (use env var $DOCKER_USER to populate).
+    type: string
+    default: $DOCKER_USER
+  registry_pass:
+    description: Password for private registry (use env var $DOCKER_PASS to populate).
+    type: string
+    default: $DOCKER_PASS
+  timeout:
+    description: Timeout used for Anchore Engine image scanning.
+    type: string
+    default: '300'
+
+steps:
+  - setup_remote_docker:
+      docker_layer_caching: true 
+  - checkout
+  - when:
+      name: Run after_checkout life cycle hook steps.
+      condition: << parameters.after_checkout >>
+      steps: << parameters.after_checkout >>
+  - start_engine
+  - when:
+      name: Run before_analyze life cycle hook steps.
+      condition: << parameters.before_analyze >>
+      steps: << parameters.before_analyze >>
+  - when:
+      condition: << parameters.private_registry >>
+      steps:
+        - add_private_registry:
+            registry_name: << parameters.registry_name >>
+            registry_user: << parameters.registry_user >>
+            registry_pass: << parameters.registry_pass >>
+  - analyze_image:
+      image_name: << parameters.image_name >>
+      timeout: << parameters.timeout >>
+  - when:
+      name: Run after_analyze life cycle hook steps.
+      condition: << parameters.after_analyze >>
+      steps: << parameters.after_analyze >>
+  - policy_evaluation:
+      image_name: << parameters.image_name >>
+      policy_failure: << parameters.policy_failure >>
+      policy_bundle_file_path: << parameters.policy_bundle_file_path >>
+  - parse_reports
+  - store_artifacts:
+      path: anchore-reports

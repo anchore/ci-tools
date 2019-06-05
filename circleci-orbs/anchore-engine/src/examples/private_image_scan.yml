@@ -1,0 +1,19 @@
+description: |
+  Use this job to scan an image located in a private registry. A custom
+  policy can be used for evaluation, add custom Anchore policy bundle to
+  .circleci/.anchore/policy_bundle.json in your repository.
+
+usage:
+  version: 2.1
+  orbs:
+    anchore: anchore/anchore-engine@1.4.0
+
+  workflows:
+    scan_image:
+      jobs:
+        - anchore/image_scan:
+            image_name: docker.io/anchore/anchore-engine:latest
+            private_registry: True
+            registry_name: docker.io
+            registry_user: $DOCKER_USER
+            registry_pass: $DOCKER_PASS

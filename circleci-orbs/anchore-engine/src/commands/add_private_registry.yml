@@ -1,0 +1,23 @@
+description: |
+  Adds credentials for private registries to anchore engine.
+  Set registry credentials with $DOCKER_USER & $DOCKER_PASS env vars.
+  Must run on executor with anchore-engine running & anchore-cli installed.
+
+parameters:
+  registry_name:
+    description: Name of private registry (eg - docker.io).
+    type: string
+    default: docker.io
+  registry_user:
+    description: Username for private registry (use env var to populate).
+    type: string
+    default: $DOCKER_USER
+  registry_pass:
+    description: Password for private registry (use env var to populate).
+    type: string
+    default: $DOCKER_PASS
+
+steps:
+  - run:
+      name: Add private registry credentials to anchore engine.
+      command: docker exec -it anchore-engine anchore-cli registry add "<< parameters.registry_name >>" "<< parameters.registry_user >>" "<< parameters.registry_pass >>" --skip-validate

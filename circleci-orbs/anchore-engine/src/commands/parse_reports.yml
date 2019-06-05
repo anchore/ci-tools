@@ -1,0 +1,17 @@
+description: Prints analysis report of package vulnerabilities using JQ.
+
+steps:
+  - run:
+      name: View parsed vulnerability analysis report.
+      command: |
+        if [[ ! $(which jq) ]]; then
+          (set +o pipefail; apk add jq || apt-get install -y jq || yum install -y jq)
+        fi
+        if [[ $(ls anchore-reports/*content-os*.json 2> /dev/null) ]]; then
+          printf "\n%s\n" "The following OS packages are installed:"
+          jq '[.content | sort_by(.package) | .[] | {package: .package, version: .version}]' anchore-reports/*content-os*.json
+        fi
+        if [[ $(ls anchore-reports/*vuln*.json 2> /dev/null) ]]; then
+          printf "\n%s\n" "The following vulnerabilities were found:"
+          jq '[.vulnerabilities | group_by(.package) | .[] | {package: .[0].package, vuln: [.[].vuln]}]' anchore-reports/*vuln*.json
+        fi

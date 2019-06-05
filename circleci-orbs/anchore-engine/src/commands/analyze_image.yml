@@ -1,0 +1,22 @@
+description: |
+  Add image to anchore engine and start analyzing.
+  image_name is required, timeout is optional.
+
+parameters:
+  image_name:
+    description: Image repository & tag (eg - "docker.io/anchore/anchore-engine:latest").
+    type: string
+  timeout:
+    description: Timeout used for Anchore Engine image scanning.
+    type: string
+    default: '300'
+
+steps:
+  - run:
+      name: Analyze image with anchore engine.
+      command: |
+        IMAGE_NAME="<< parameters.image_name >>"
+        TIMEOUT=<< parameters.timeout >>
+        docker exec -it anchore-engine anchore_ci_tools.py --analyze --report --image "$IMAGE_NAME" --timeout "$TIMEOUT"
+        docker exec -it anchore-engine anchore-cli image get "$IMAGE_NAME"
+        docker cp anchore-engine:/anchore-engine/anchore-reports/ ./
