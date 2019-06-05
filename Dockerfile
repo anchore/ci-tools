@@ -23,7 +23,7 @@ RUN set -ex; \
     chmod +x /usr/local/bin/jq; \
     chmod +x /usr/local/bin/gosu; \
 	rm -rf "$GNUPGHOME" /usr/local/bin/gosu.asc /usr/local/bin/jq.asc; \
-    rm -rf /anchore-engine/* /root/.cache /config/config.yaml /docker-entrypoint.sh
+    rm -rf /anchore-engine/* /root/.cache /config/config.yaml 
 
 ENV PG_MAJOR="9.6"
 ENV PGDATA="/var/lib/postgresql/data"

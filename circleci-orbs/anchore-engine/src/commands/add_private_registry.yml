@@ -24,4 +24,4 @@ steps:
         REGISTRY_NAME="<< parameters.registry_name >>"
         REGISTRY_USER="<< parameters.registry_user >>"
         REGISTRY_PASS="<< parameters.registry_pass >>"
-        docker exec -e REGISTRY_NAME="$REGISTRY_NAME" -e REGISTRY_USER="$REGISTRY_USER" -e REGISTRY_PASS="$REGISTRY_PASS" -it anchore-engine bash -lc 'set -x; anchore-cli registry add --skip-validate "$REGISTRY_NAME" "$REGISTRY_USER" "$REGISTRY_PASS"'
+        docker exec -e REGISTRY_NAME="$REGISTRY_NAME" -e REGISTRY_USER="$REGISTRY_USER" -e REGISTRY_PASS="$REGISTRY_PASS" -it anchore-engine bash -lc 'anchore-cli registry add --skip-validate "$REGISTRY_NAME" "$REGISTRY_USER" "$REGISTRY_PASS"'
