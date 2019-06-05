@@ -20,4 +20,8 @@ parameters:
 steps:
   - run:
       name: Add private registry credentials to anchore engine.
-      command: docker exec -it anchore-engine bash -lc "set -x; anchore-cli registry add --skip-validate \"<< parameters.registry_name >>\" \"<< parameters.registry_user >>\" \"<< parameters.registry_pass >>\""
+      command: |
+        REGISTRY_NAME="<< parameters.registry_name >>"
+        REGISTRY_USER="<< parameters.registry_user >>"
+        REGISTRY_PASS="<< parameters.registry_pass >>"
+        docker exec -e REGISTRY_NAME="$REGISTRY_NAME" -e REGISTRY_USER="$REGISTRY_USER" -e REGISTRY_PASS="$REGISTRY_PASS" -it anchore-engine bash -lc 'set -x; anchore-cli registry add --skip-validate "$REGISTRY_NAME" "$REGISTRY_USER" "$REGISTRY_PASS"'
