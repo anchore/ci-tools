@@ -16,5 +16,5 @@ steps:
       command: |
         ANCHORE_VERSION="<< parameters.anchore_version >>"
         TIMEOUT=<< parameters.timeout >>
-        docker run -d --name anchore-engine anchore/inline-scan:${ANCHORE_VERSION} start
-        docker exec -it anchore-engine bash -lc 'anchore_ci_tools.py --wait --timeout "$TIMEOUT"'
+        docker run -d --name anchore-engine "anchore/inline-scan:${ANCHORE_VERSION}" start
+        docker exec -it anchore-engine bash -lc "anchore_ci_tools.py --wait --timeout "$TIMEOUT""

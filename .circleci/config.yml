@@ -23,7 +23,7 @@ filter_semver_tags: &filter_semver_tags
 # Start of CircleCI Configuration
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@dev:latest
+  anchore: anchore/anchore-engine@dev:alpha
   orb-tools: circleci/orb-tools@8.5.0
 
 jobs:

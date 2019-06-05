@@ -17,6 +17,6 @@ steps:
       command: |
         IMAGE_NAME="<< parameters.image_name >>"
         TIMEOUT=<< parameters.timeout >>
-        docker exec -it anchore-engine bash -lc 'anchore_ci_tools.py --analyze --report --image "$IMAGE_NAME" --timeout "$TIMEOUT"'
-        docker exec -it anchore-engine bash -lc 'anchore-cli image get "$IMAGE_NAME"'
+        docker exec -it anchore-engine bash -lc "set -x; anchore_ci_tools.py --analyze --report --image "$IMAGE_NAME" --timeout "$TIMEOUT""
+        docker exec -it anchore-engine bash -lc "set -x; anchore-cli image get "$IMAGE_NAME""
         docker cp anchore-engine:/anchore-engine/anchore-reports/ ./
