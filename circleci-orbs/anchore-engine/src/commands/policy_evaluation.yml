@@ -27,13 +27,13 @@ steps:
         fi
         if [[ ! -z "$BUNDLE_PATH" ]] && [[ -f "$BUNDLE_PATH" ]]; then
           docker cp "$BUNDLE_PATH" anchore-engine:/anchore-engine/$(basename "$BUNDLE_PATH")
-          (docker exec -i anchore-engine anchore-cli --json policy add "/anchore-engine/$(basename $BUNDLE_PATH)" | jq '.policyId' | xargs docker exec -i anchore-engine anchore-cli policy activate) || \
+          (docker exec -i bash -lc 'anchore-engine anchore-cli --json policy add "/anchore-engine/$(basename $BUNDLE_PATH)"' | jq '.policyId' | xargs docker exec -i bash -lc 'anchore-engine anchore-cli policy activate') || \
             printf "\n%s\n" "Failed to activate policy bundle $BUNDLE_PATH - using default policy."
         else
           printf "\n%s\n" "Unable to locate policy bundle $BUNDLE_PATH - using default policy."
         fi
         if << parameters.policy_failure >>; then
-          docker exec -it anchore-engine anchore-cli evaluate check "$IMAGE_NAME" --detail
+          docker exec -it anchore-engine bash -lc 'anchore-cli evaluate check "$IMAGE_NAME" --detail'
         else
-          (set +o pipefail; docker exec -it anchore-engine anchore-cli evaluate check "$IMAGE_NAME" --detail | tee /dev/null)
+          (set +o pipefail; docker exec -it anchore-engine bash -lc 'anchore-cli evaluate check "$IMAGE_NAME" --detail' | tee /dev/null)
         fi
