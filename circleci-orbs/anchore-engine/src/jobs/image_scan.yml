@@ -54,7 +54,7 @@ parameters:
 
 steps:
   - setup_remote_docker:
-      docker_layer_caching: true 
+      docker_layer_caching: true
   - checkout
   - when:
       name: Run after_checkout life cycle hook steps.

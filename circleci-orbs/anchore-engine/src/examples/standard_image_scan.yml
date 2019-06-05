@@ -7,7 +7,7 @@ usage:
   version: 2.1
   orbs:
     anchore: anchore/anchore-engine@1.4.0
-  
+
   workflows:
     scan_image:
       jobs:

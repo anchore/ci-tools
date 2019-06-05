@@ -3,7 +3,7 @@ description: |
   it can be used to scan multiple images that haven't been pushed to a registry yet.
   If Anchore policy evaluation gives 'fail' status, the CI job will be marked
   as a failure. A custom policy can be used for evaluation, add custom Anchore
-  policy bundle to .circleci/.anchore/policy_bundle.json in your repository. 
+  policy bundle to .circleci/.anchore/policy_bundle.json in your repository.
   Scanning multiple images does not support passing a dockerfile.
 
 usage:

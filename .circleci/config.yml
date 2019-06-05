@@ -3,9 +3,29 @@ attach_workspace: &attach_workspace
   attach_workspace:
     at: /home/circleci/workspace/
 
+filter_dev_orb_integration: &filter_dev_orb_integration
+  branches:
+    ignore: /.*/
+  tags:
+    only: /integration-.*/
+
+filter_dev_orb_branch: &filter_dev_orb_branch
+  branches:
+    only: /orb.*/
+
+filter_semver_tags: &filter_semver_tags
+  branches:
+    ignore: /.*/
+  tags:
+    only: /^v[0-9]+(\.[0-9]+)*$/
+
+
+# Start of CircleCI Configuration
 version: 2.1
 orbs:
   anchore: anchore/anchore-engine@dev:latest
+  orb-tools: circleci/orb-tools@8.5.0
+
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
@@ -73,18 +93,6 @@ jobs:
     - store_artifacts:
         path: anchore-reports
 
-  publish_dev_orb:
-    docker:
-    - image: circleci/circleci-cli:latest
-    steps:
-    - checkout
-    - run:
-        name: Validate orb
-        command: circleci orb validate circleci-orbs/anchore-engine/orb.yml --token "$CIRCLECI_TOKEN"
-    - run:
-        name: Publish dev orb
-        command: circleci orb publish circleci-orbs/anchore-engine/orb.yml anchore/anchore-engine@dev:latest --token "$CIRCLECI_TOKEN"
-
   build_stateless_image:
     parameters:
       anchore_version: 
@@ -139,6 +147,9 @@ workflows:
     - build_stateless_image:
         name: build_stateless_dev
         anchore_version: dev
+        filters:
+          branches:
+            ignore: /orb.*/
     - test_inline_script:
         name: test_inline_dev
         anchore_version: dev
@@ -152,49 +163,56 @@ workflows:
           - test_inline_dev
     - build_stateless_image:
         name: build_stateless_latest
-        filters:
-          # ignore any commit on any branch by default
-          branches:
-            ignore: /.*/
-          # only act on version tags
-          tags:
-            only: /^v[0-9]+(\.[0-9]+)*$/
+        filters: *filter_semver_tags
     - test_inline_script:
         name: test_inline_latest
         requires:
           - build_stateless_latest
-        filters:
-          branches:
-            ignore: /.*/
-          tags:
-            only: /^v[0-9]+(\.[0-9]+)*$/
+        filters: *filter_semver_tags
     - push_dockerhub:
         name: push_stateless_latest
         context: dockerhub
         requires:
           - test_inline_latest
-        filters:
-          branches:
-            ignore: /.*/
-          tags:
-            only: /^v[0-9]+(\.[0-9]+)*$/
+        filters: *filter_semver_tags
 
-  test_orb_nightly:
-    triggers:
-      - schedule:
-          cron: "0 14 * * *"
-          filters:
-            branches:
-              only:
-                - master
+  lint_publish_dev_orb:
     jobs:
-    - local_image_scan
+      - orb-tools/lint:
+          lint-dir: circleci-orbs/anchore-engine/src/
+          filters: *filter_dev_orb_branch
+      - orb-tools/pack:
+          source-dir: circleci-orbs/anchore-engine/src/
+          requires:
+            - orb-tools/lint
+          filters: *filter_dev_orb_branch
+      - orb-tools/publish-dev:
+          context: publish_dev_orb
+          orb-name: anchore/anchore-engine
+          requires:
+            - orb-tools/pack
+          filters: *filter_dev_orb_branch
+      - orb-tools/trigger-integration-workflow:
+          name: trigger-integration-dev
+          context: publish_dev_orb
+          cleanup-tags: true
+          ssh-fingerprints: d3:90:de:4e:fb:1f:ab:6d:77:2a:c5:6c:08:87:9b:c0
+          requires:
+            - orb-tools/publish-dev
+          filters: *filter_dev_orb_branch
+
+  test_dev_orb:
+    jobs:
+    - local_image_scan:
+        filters: *filter_dev_orb_integration
     - custom_policy_pass:
         requires:
           - local_image_scan
+        filters: *filter_dev_orb_integration
     - local_images_scan:
         requires:
           - custom_policy_pass
+        filters: *filter_dev_orb_integration
     - anchore/image_scan:
         name: scan_private_image
         image_name: gcr.io/testing-214322/alpine-test
@@ -202,18 +220,21 @@ workflows:
         registry_name: gcr.io
         registry_user: _json_key
         registry_pass: $_gcr_json_key
+        filters: *filter_dev_orb_integration
     - anchore/image_scan:
-        requires:
-          - scan_private_image
         image_name: anchore/anchore-engine:latest
         policy_bundle_file_path: ''
-    - anchore/image_scan:
         requires:
           - scan_private_image
+        filters: *filter_dev_orb_integration
+    - anchore/image_scan:
         context: dockerhub
         image_name: anchore/private_testing:anchore-ui-dev
         private_registry: True
         timeout: '500'
+        requires:
+          - scan_private_image
+        filters: *filter_dev_orb_integration
 
   nightly_build_image:
     triggers:
