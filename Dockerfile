@@ -67,7 +67,7 @@ RUN set -eux; \
     PGUSER="${PGUSER:-$POSTGRES_USER}" \
     gosu anchore bash -c 'pg_ctl -D "$PGDATA" -m fast -w stop'; \
     unset PGPASSWORD; \
-    rm -f /docker-entrypoint-initdb.d/anchore-bootstrap.sql.gz 
+    rm -f /docker-entrypoint-initdb.d/anchore-bootstrap.sql.gz
 
 ENV REGISTRY_VERSION 2.7
 
