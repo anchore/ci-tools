@@ -224,7 +224,7 @@ workflows:
     - anchore/image_scan:
         image_name: anchore/anchore-engine:latest
         policy_bundle_file_path: ''
-        timeout: '500'
+        timeout: '1000'
         requires:
           - scan_private_image
         filters: *filter_dev_orb_integration
