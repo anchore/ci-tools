@@ -89,8 +89,10 @@ RUN set -eux; \
     chown anchore:anchore /anchore-engine
 
 COPY conf/stateless_ci_config.yaml /config/config.yaml
-COPY scripts/anchore_ci_tools.py /usr/local/bin/
-COPY scripts/docker-entrypoint.sh /usr/local/bin/
+COPY scripts/anchore_ci_tools.py  \
+     scripts/docker-entrypoint.sh \
+     scripts/image_analysis.sh \
+     scripts/image_vuln_scan.sh /usr/local/bin/
 
 USER anchore:anchore
 WORKDIR /anchore-engine
