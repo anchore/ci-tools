@@ -3,6 +3,7 @@
 set -exo pipefail
 
 export TIMEOUT=${TIMEOUT:=60}
+
 main() {
     # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
     if [[ "$1" = 'debug' ]]; then

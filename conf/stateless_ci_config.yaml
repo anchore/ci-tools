@@ -25,9 +25,6 @@ feeds:
       #   more memory to do process the significant data volume. We recommend at least 4GB available for the container
       packages: False
       nvd: True
-      # Enabling snyk syncs snyk vulnerability data from an on-premise anchore enterprise feeds service. Please contact
-      # anchore support for finding out more about this service
-      snyk: False
   anonymous_user_username: anon@ancho.re
   anonymous_user_password: pbiU2RYZ2XrmYQ
   url: 'https://ancho.re/v1/service/feeds'
@@ -37,7 +34,6 @@ feeds:
   read_timeout_seconds: 60
 
 
-# As of 0.3.0dev0 this section is used instead of the credentials.users section
 # Can be omitted and will default to 'foobar' on db initialization
 default_admin_password: ${ANCHORE_CLI_PASS}
 
@@ -61,12 +57,6 @@ services:
     listen: '0.0.0.0'
     port: 8228
     authorization_handler: native
-  kubernetes_webhook:
-    enabled: True
-    require_auth: False
-    endpoint_hostname: '${ANCHORE_ENDPOINT_HOSTNAME}'
-    listen: '0.0.0.0'
-    port: 8338
   catalog:
     enabled: True
     require_auth: True

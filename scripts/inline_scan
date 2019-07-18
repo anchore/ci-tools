@@ -1,29 +1,39 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-set -eo pipefail
-
-# If using a locally built stateless CI container, export ANCHORE_CI_IMAGE=<image_name>. 
-# This will override the image name from Dockerhub.
-INLINE_SCAN_IMAGE="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:v0.4.1}"
+set -exo pipefail
 
 display_usage() {
 cat << EOF
 
+Anchore Engine Inline Scanner/Analyzer --
+
+  Wrapper script for performing vulnerability scan or image analysis on local docker images, utilizing the Anchore Engine inline_scan container.
+  For more detailed usage instructions use the -h option after specifying scan or analyze.
+
+    Usage: ${0##*/} <scan> <analyze> [ OPTIONS ]
+
+EOF
+}
+
+display_usage_scanner() {
+cat << EOF
+
 Anchore Engine Inline Scan --
 
-  Wrapper script for performing vulnerability analysis on local docker images, utilizing Anchore Engine inline_scan container.  
+  Script for performing vulnerability scan on local docker images, utilizing the Anchore Engine inline_scan container.
+  Multiple images can be passed for scanning if a Dockerfile is not specified. 
 
   Images should be built & tagged locally, or remote images can be pulled with the -p option.
 
-    Usage: ${0##*/} [ -f ] [ -p ] [ -r ] [ -t 300 ] [ -v ./anchore_images ] [ -d ./Dockerfile ] [ -b ./policy.json ] [ IMAGE_ONE ] [ IMAGE_TWO ] [ ... ]
+    Usage: ${0##*/} [ OPTIONS ] <FULL_IMAGE_TAG_1> <FULL_IMAGE_TAG_2> <....>
 
-      -b  [optional] Path to local Anchore policy bundle
-      -d  [optional] Path to local Dockerfile
-      -v  [optional] Path to directory to be mounted as docker volume. All image archives in directory will be scanned
+      -b <PATH>  [optional] Path to local Anchore policy bundle (ex: -b ./policy_bundle.json)
+      -d <PATH>  [optional] Path to local Dockerfile (ex: -d ./dockerfile)
+      -v <PATH>  [optional] Path to directory, all image archives in directory will be scanned (ex: -v /tmp/scan_images/)
+      -t <TEXT>  [optional] Specify timeout for image scanning in seconds. Defaults to 300s. (ex: -t 500)
       -f  [optional] Exit script upon failed Anchore policy evaluation
       -p  [optional] Pull remote docker images
       -r  [optional] Generate analysis reports in your current working directory
-      -t  [optional] Specify timeout for image scanning in seconds (defaults to 300s)
 
 EOF
 }
@@ -33,26 +43,346 @@ cat << EOF
 
 Anchore Engine Inline Analyzer --
 
-  Wrapper script for performing analysis on local docker images, utilizing Anchore Engine analyzer subsystem.
+  Script for performing analysis on local docker images, utilizing Anchore Engine analyzer subsystem.
   After image is analyzed, the resulting Anchore image archive is sent to a remote Anchore Engine installation
-  using the -u <URL> option.
+  using the -r <URL> option. This allows inline_analysis data to be persisted & utilized for reporting.
 
   Images should be built & tagged locally.
 
-    Usage: ${0##*/} -h <URL> -u <USER> -p <PASSWORD> [ OPTIONS ] <FULL_IMAGE_TAG>
+    Usage: ${0##*/} analyze -r <REMOTE_URL> -u <USER> -P <PASSWORD> [ OPTIONS ] <FULL_IMAGE_TAG>
 
-      -h <TEXT> [required] URL to remote Anchore Engine API endpoint host (ex: -h 'https://anchore.example.com:8228/v1')
-      -u <TEXT> [required] Username for remote Anchore Engine auth (ex: -u 'admin')
-      -p <TEXT> [required] Password for remote Anchore Engine auth (ex: -p 'foobar')
+      -r <TEXT>  [required] URL to remote Anchore Engine API endpoint (ex: -h 'https://anchore.example.com:8228/v1')
+      -u <TEXT>  [required] Username for remote Anchore Engine auth (ex: -u 'admin')
+      -P <TEXT>  [required] Password for remote Anchore Engine auth (ex: -P 'foobar')
 
-      -a <TEXT> [optional] Add annotations (ex: -a 'key=value,key=value')
-      -d <PATH> [optional] Specify image digest (ex: -d 'sha256:<64 hex characters>')
-      -f <PATH> [optional] Path to Dockerfile (ex: -f ./Dockerfile)
-      -i <TEXT> [optional] Specify image ID within Anchore Engine (ex: -i '<64 hex characters>')
-      -m <PATH> [optional] Path to Docker image manifest (ex: -m ./manifest.json)
-      -p <TEXT> [optional] Specify parent image digest (ex: -p 'sha256:<64 hex characters>')
+      -a <TEXT>  [optional] Add annotations (ex: -a 'key=value,key=value')
+      -d <PATH>  [optional] Specify image digest (ex: -d 'sha256:<64 hex characters>')
+      -f <PATH>  [optional] Path to Dockerfile (ex: -f ./Dockerfile)
+      -i <TEXT>  [optional] Specify image ID used within Anchore Engine (ex: -i '<64 hex characters>')
+      -m <PATH>  [optional] Path to Docker image manifest (ex: -m ./manifest.json)
+      -t <TEXT>  [optional] Specify timeout for image analysis in seconds. Defaults to 300s. (ex: -t 500)
+      -p  [optional] Pull remote docker images
 
 EOF
+}
+
+main() {
+    trap 'cleanup' EXIT ERR SIGTERM 
+    trap 'interupt' SIGINT
+    
+    if [[ "$1" == 'analyze' ]]; then
+        shift "$((OPTIND))"
+        get_and_validate_analyzer_options "$@"
+        get_and_validate_images "$IMG_OPTS"
+        prepare_inline_container
+        CREATE_CMD+=('analyze')
+        RUN_CMD+=('analyze')
+        start_analysis
+    else
+        get_and_validate_scanner_options "$@"
+        get_and_validate_images "$IMG_OPTS"
+        prepare_inline_container
+        CREATE_CMD+=('scan')
+        RUN_CMD+=('scan')
+        start_vuln_scan
+    fi
+}
+
+get_and_validate_analyzer_options() {
+    #Parse options
+    while getopts ':r:u:P:a:d:f:i:m:t:ph' option; do
+        case "${option}" in
+            r  ) r_flag=true; ANCHORE_URL="${OPTARG%%/v1}";;
+            u  ) u_flag=true; ANCHORE_USER="$OPTARG";;
+            P  ) P_flag=true; ANCHORE_PASS="$OPTARG";;
+            a  ) a_flag=true; ANCHORE_ANNOTATIONS="$OPTARG";;
+            d  ) d_flag=true; IMAGE_DIGEST_SHA="$OPTARG";;
+            f  ) f_flag=true; DOCKERFILE="$OPTARG";;
+            i  ) i_flag=true; ANCHORE_IMAGE_ID="$OPTARG";;
+            m  ) m_flag=true; MANIFEST_FILE="$OPTARG";;
+            t  ) t_flag=true; TIMEOUT="$OPTARG";;
+            p  ) p_flag=true;;
+            h  ) display_usage_analyzer; exit;;
+            \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage_analyzer >&2; exit 1;;
+            :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage_analyzer >&2; exit 1;;
+        esac
+    done
+    shift "$((OPTIND - 1))"
+
+    # Check for invalid options
+    if [[ ! $(which docker) ]]; then
+        printf '\n\t%s\n\n' 'ERROR - Docker is not installed or cannot be found in $PATH' >&2
+        display_usage_analyzer >&2
+        exit 1
+    elif [[ "${#@}" -gt 1 ]]; then
+        printf '\n\t%s\n\n' "ERROR - only 1 image can be analyzed at a time" >&2
+        display_usage_analyzer >&2
+        exit 1
+    elif [[ "${#@}" -lt 1 ]]; then
+        printf '\n\t%s\n\n' "ERROR - must specify an image to analyze" >&2
+        display_usage_analyzer >&2
+        exit 1
+    elif [[ "$f_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
+        printf '\n\t%s\n\n' "ERROR - Dockerfile: $DOCKERFILE does not exist" >&2
+        display_usage_analyzer >&2
+        exit 1
+    elif [[ "$m_flag" ]] && [[ ! -f "$MANIFEST_FILE" ]];then
+        printf '\n\t%s\n\n' "ERROR - Manifest: $MANIFEST_FILE does not exist" >&2
+        display_usage_analyzer >&2
+        exit 1
+    elif [[ "$t_flag" ]] && [[ ! "$TIMEOUT" =~ ^[0-9]+$ ]]; then
+        printf '\n\t%s\n\n' "ERROR - timeout must be set to a valid integer" >&2
+        display_usage_analyzer >&2
+        exit 1
+    fi
+
+    IMG_OPTS="$@"
+}
+
+get_and_validate_scanner_options() {
+    # Parse options
+    while getopts ':d:b:v:t:fhrp' option; do
+        case "$option" in
+            d  ) d_flag=true; DOCKERFILE="$OPTARG";;
+            f  ) f_flag=true;;
+            r  ) r_flag=true;;
+            b  ) b_flag=true; POLICY_BUNDLE="$OPTARG";;
+            p  ) p_flag=true;;
+            t  ) t_flag=true; TIMEOUT="$OPTARG";;
+            v  ) v_flag=true; VOLUME_PATH="$(cd "$(dirname "$OPTARG")"; pwd -P)/$(basename "$OPTARG")";; # Get absolute path of file
+            h  ) display_usage; exit;;
+            \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage_scanner >&2; exit 1;;
+            :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument" >&2; display_usage_scanner >&2; exit 1;;
+        esac
+    done
+    shift "$((OPTIND - 1))"
+
+    # Check for invalid options
+    if [[ ! $(which docker) ]]; then
+        printf '\n\t%s\n\n' 'ERROR - Docker is not installed or cannot be found in $PATH' >&2
+        display_usage_scanner >&2
+        exit 1
+    elif [[ "$d_flag" ]] && [[ "${#@}" -gt 1 ]]; then
+        printf '\n\t%s\n\n' "ERROR - If specifying a Dockerfile, only 1 image can be scanned at a time" >&2
+        display_usage_scanner >&2
+        exit 1
+    elif [[ "$r_flag" ]] && ! (mkdir -p ./anchore-reports); then
+        printf '\n\t%s\n\n' "ERROR - ${PWD}/anchore-reports is not writable" >&2
+        display_usage_scanner >&2
+        exit 1
+    elif [[ "$b_flag" ]] && [[ ! -f "$POLICY_BUNDLE" ]]; then
+        printf '\n\t%s\n\n' "ERROR - Policy Bundle: $POLICY_BUNDLE does not exist" >&2
+        display_usage_scanner >&2
+        exit 1
+    elif [[ "$d_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
+        printf '\n\t%s\n\n' "ERROR - Dockerfile: $DOCKERFILE does not exist" >&2
+        display_usage_scanner >&2
+        exit 1
+    elif [[ ! "v_flag" ]] && [[ "${#@}" -eq 0 ]]; then
+        printf '\n\t%s\n\n' "ERROR - ${0##*/} requires at least 1 image name as input, unless utilizing -v option" >&2
+        display_usage_scanner >&2
+        exit 1
+    elif [[ "$v_flag" ]] && [[ ! -d "$VOLUME_PATH" ]]; then
+        printf '\n\t%s\n\n' "ERROR - $VOLUME_PATH is not a directory" >&2
+        display_usage_scanner >&2
+        exit 1
+    elif [[ "$v_flag" ]] && [[ "$d_flag" ]]; then
+        printf '\n\t%s\n\n' "ERROR - cannot specify image volume & Dockerfile. Dockerfile option only supports scanning one image at time" >&2
+        display_usage_scanner >&2
+        exit 1
+    elif [[ "$t_flag" ]] && [[ ! "$TIMEOUT" =~ ^[0-9]+$ ]]; then
+        printf '\n\t%s\n\n' "ERROR - timeout must be set to a valid integer" >&2
+        display_usage_scanner >&2
+        exit 1
+    fi
+
+    IMG_OPTS="$@"
+}
+
+get_and_validate_images() {
+    IMAGE_NAMES=()
+    SCAN_IMAGES=()
+    FAILED_IMAGES=()
+
+    # Add all unique positional input params to IMAGE_NAMES array
+    for i in "$@"; do
+        if [[ ! "${IMAGE_NAMES[@]}" =~ "$i" ]]; then
+            IMAGE_NAMES+=("$i")
+        fi
+    done
+
+    # Make sure all images are available locally, add to FAILED_IMAGES array if not
+    for i in "${IMAGE_NAMES[@]}"; do
+        if [[ "$p_flag" ]]; then
+            printf '\n%s\n' "Pulling image -- $i"
+            docker pull $i || true
+        fi
+
+        docker inspect "$i" &> /dev/null || FAILED_IMAGES+=("$i")
+
+        if [[ ! "${FAILED_IMAGES[@]}" =~ "$i" ]]; then
+            SCAN_IMAGES+=("$i")
+        fi
+    done
+
+    # Give error message on any invalid image names
+    if [[ "${#FAILED_IMAGES[@]}" -gt 0 ]]; then
+        printf '\n%s\n\n' "WARNING - Please pull remote image, or build/tag all local images before attempting analysis again" >&2
+
+        if [[ "${#FAILED_IMAGES[@]}" -ge "${#IMAGE_NAMES[@]}" ]]; then
+            printf '\n\t%s\n\n' "ERROR - no local docker images specified in script input: ${0##*/} ${IMAGE_NAMES[*]}" >&2
+            display_usage >&2
+            exit 1
+        fi
+
+        for i in "${FAILED_IMAGES[@]}"; do
+            printf '\t%s\n' "Could not find image locally -- $i" >&2
+        done
+    fi
+}
+
+prepare_inline_container() {
+    # If using a locally built stateless CI container, export ANCHORE_CI_IMAGE=<image_name>. 
+    # This will override the image name from Dockerhub.
+    INLINE_SCAN_IMAGE="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:v0.4.1}"
+
+    # Check if env var is overriding which inline-scan image to utilize.
+    if [[ -z "$ANCHORE_CI_IMAGE" ]]; then
+        printf '\n%s\n' "Pulling $INLINE_SCAN_IMAGE"
+        docker pull "$INLINE_SCAN_IMAGE"
+    else
+        printf '\n%s\n' "Using local image for scanning -- $INLINE_SCAN_IMAGE"
+    fi
+
+    DOCKER_NAME="${RANDOM:-TEMP}-inline-anchore-engine"
+    CREATE_CMD=('docker create --name "$DOCKER_NAME"')
+    RUN_CMD=('docker run -i --name "$DOCKER_NAME"')
+
+    if [[ "$t_flag" ]]; then
+        CREATE_CMD+=('-e TIMEOUT="$TIMEOUT"')
+        RUN_CMD+=('-e TIMEOUT="$TIMEOUT"')
+    fi
+
+    if [[ "$v_flag" ]]; then
+        printf '\n%s\n' "Creating volume mount -- ${VOLUME_PATH}:/anchore-engine"
+        CREATE_CMD+=('-v "${VOLUME_PATH}:/anchore-engine:rw"')
+    fi
+    
+    CREATE_CMD+=('"$INLINE_SCAN_IMAGE"')
+    RUN_CMD+=('"$INLINE_SCAN_IMAGE"')
+}
+
+start_vuln_scan() {
+    if [[ "$f_flag" ]]; then
+        CREATE_CMD+=('-f')
+        RUN_CMD+=('-f')
+    fi
+
+    if [[ "$r_flag" ]]; then
+        CREATE_CMD+=('-r')
+        RUN_CMD+=('-r')
+    fi
+
+    # If no files need to be copied to container, pipe docker save output to stdin of docker run command.
+    if [[ ! "$d_flag" ]] && [[ ! "$v_flag" ]] && [[ ! "$b_flag" ]] && [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
+        printf '\n%s' "Preparing ${SCAN_IMAGES[*]} for analysis... "
+        RUN_CMD+=('-i "${SCAN_IMAGES[*]}"')
+
+        # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
+        if [[ ! "${SCAN_IMAGES[*]}" =~ [:]+ ]]; then
+            docker save "${SCAN_IMAGES[*]}:latest" | eval "${RUN_CMD[*]}"
+        else
+            docker save "${SCAN_IMAGES[*]}" | eval "${RUN_CMD[*]}"
+        fi
+    else
+        COPY_CMDS=()
+        # Prepare commands for container creation & copying all files to container.
+        if [[ "$b_flag" ]]; then
+            CREATE_CMD+=('-b "$POLICY_BUNDLE"')
+            COPY_CMDS+=('docker cp "$POLICY_BUNDLE" "${DOCKER_NAME}:/anchore-engine/$(basename $POLICY_BUNDLE)";')
+        fi
+        
+        if [[ "$d_flag" ]] && [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
+            CREATE_CMD+=('-d "$DOCKERFILE" -i "${SCAN_IMAGES[*]}"')
+            COPY_CMDS+=('docker cp "$DOCKERFILE" "${DOCKER_NAME}:/anchore-engine/$(basename $DOCKERFILE)";')
+        fi
+
+        docker_id=$(eval "${CREATE_CMD[*]}")
+        eval "${COPY_CMDS[*]}"
+        
+        IMAGE_FILES=()
+        # Save all image files to /tmp and copy to created container
+        for image in "${SCAN_IMAGES[@]}"; do
+            base_image_name=$(basename "$image")
+            printf '\n%s' "Preparing $image for scanning... "
+            if [[ "$base_image_name" =~ [:]{1} ]]; then
+                repo="${base_image_name%:*}"
+                tag="${base_image_name#*:}"
+            else
+                repo="$base_image_name"
+                tag="latest"
+            fi
+            save_file_name="${repo}+${tag}.tar" 
+            IMAGE_FILES+=("$save_file_name")
+            
+            if [[ "$v_flag" ]]; then
+                save_file_path="${VOLUME_PATH}/${save_file_name}"
+            else
+                mkdir -p /tmp/anchore
+                save_file_path="/tmp/anchore/${save_file_name}"
+            fi
+
+            # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
+            if [[ ! "$image" =~ [:]+ ]]; then
+                docker save "${image}:latest" -o "$save_file_path"
+            else
+                docker save "$image" -o "$save_file_path"
+            fi
+
+            if [[ -f "$save_file_path" ]]; then
+                chmod +r "$save_file_path"
+                printf '%s' "Successfully prepared image archive -- $save_file_path"
+            else
+                printf '\n\t%s\n\n' "ERROR - unable to save docker image to $save_file_path." >&2
+                display_usage >&2
+                exit 1
+            fi
+
+            if [[ ! "$v_flag" ]]; then
+                docker cp "$save_file_path" "${DOCKER_NAME}:/anchore-engine/${save_file_name}"
+                rm -f "$save_file_path"
+            fi
+        done
+        echo
+        docker start -ia "$DOCKER_NAME"
+    fi
+
+    if [[ "$r_flag" ]]; then
+        echo "Copying scan reports from ${DOCKER_NAME} to ${PWD}/anchore-reports/"
+        docker cp "${DOCKER_NAME}:/anchore-engine/anchore-reports/" ./
+    fi
+}
+
+start_analysis() {
+    RUN_CMD+=('-r "$ANCHORE_URL"')
+    RUN_CMD+=('-u "$ANCHORE_USER"')
+    RUN_CMD+=('-P "$ANCHORE_PASS"')
+    if [[ ! "$d_flag" ]] && [[ ! "$m_flag" ]]; then
+        printf '\n%s' "Preparing ${SCAN_IMAGES[*]} for analysis... "
+        RUN_CMD+=('"${SCAN_IMAGES[*]}"')
+
+        # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
+        if [[ ! "${SCAN_IMAGES[*]}" =~ [:]+ ]]; then
+            docker save "${SCAN_IMAGES[*]}:latest" | eval "${RUN_CMD[*]}"
+        else
+            docker save "${SCAN_IMAGES[*]}" | eval "${RUN_CMD[*]}"
+        fi
+    else
+        true
+        # Copy manifest & dockerfile to container
+        # Docker save image to temp location & copy to container
+        # start container
+    fi
 }
 
 interupt() {
@@ -71,7 +401,7 @@ cleanup() {
     fi
 
     for id in $docker_id; do
-        declare timeout=0
+        local -i timeout=0
         while (docker ps -a | grep "${id:0:10}") > /dev/null && [[ "$timeout" -lt 12 ]]; do
             docker kill "$id" &> /dev/null
             docker rm "$id" &> /dev/null
@@ -95,213 +425,4 @@ cleanup() {
     exit "$ret"
 }
 
-trap 'cleanup' EXIT ERR SIGTERM 
-trap 'interupt' SIGINT
-
-# Parse options
-while getopts ':d:b:v:t:fhrp' option; do
-  case "$option" in
-    h  ) display_usage; exit;;
-    d  ) d_flag=true; DOCKERFILE="$OPTARG";;
-    f  ) f_flag=true;;
-    r  ) r_flag=true;;
-    b  ) b_flag=true; POLICY_BUNDLE="$OPTARG";;
-    p  ) p_flag=true;;
-    t  ) t_flag=true; TIMEOUT="$OPTARG";;
-    v  ) v_flag=true; VOLUME_PATH="$(cd "$(dirname "$OPTARG")"; pwd -P)/$(basename "$OPTARG")";; # Get absolute path of file
-    \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
-    :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
-  esac
-done
-
-shift "$((OPTIND - 1))"
-
-# Check for invalid options
-if [[ ! $(which docker) ]]; then
-    printf '\n\t%s\n\n' 'ERROR - Docker is not installed or cannot be found in $PATH.' >&2
-    display_usage >&2
-    exit 1
-elif [[ "$d_flag" ]] && [[ "${#@}" -gt 1 ]]; then
-    printf '\n\t%s\n\n' "ERROR - If specifying a Dockerfile, only 1 image can be scanned at a time." >&2
-    display_usage >&2
-    exit 1
-elif [[ "$r_flag" ]] && ! (mkdir -p ./anchore-reports); then
-    printf '\n\t%s\n\n' "ERROR - ${PWD}/anchore-reports is not writable." >&2
-    display_usage >&2
-    exit 1
-elif [[ "$b_flag" ]] && [[ ! -f "$POLICY_BUNDLE" ]]; then
-    printf '\n\t%s\n\n' "ERROR - Policy Bundle: $POLICY_BUNDLE does not exist." >&2
-    display_usage >&2
-    exit 1
-elif [[ "$d_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
-    printf '\n\t%s\n\n' "ERROR - Dockerfile: $DOCKERFILE does not exist." >&2
-    display_usage >&2
-    exit 1
-elif [[ ! "v_flag" ]] && [[ "${#@}" -eq 0 ]]; then
-    printf '\n\t%s\n\n' "ERROR - ${0##*/} requires at least 1 image name as input, unless utilizing -v option." >&2
-    display_usage >&2
-    exit 1
-elif [[ "$v_flag" ]] && [[ ! -d "$VOLUME_PATH" ]]; then
-    printf '\n\t%s\n\n' "ERROR - $VOLUME_PATH is not a directory." >&2
-    exit 1
-elif [[ "$v_flag" ]] && [[ "$d_flag" ]]; then
-    printf '\n\t%s\n\n' "ERROR - cannot specify image volume & Dockerfile. Dockerfile option only supports scanning one image at time." >&2
-    exit 1
-elif [[ "$t_flag" ]] && [[ ! "$TIMEOUT" =~ ^[0-9]+$ ]]; then
-    printf '\n\t%s\n\n' "ERROR - timeout must be set to a valid integer." >&2
-    display_usage >&2
-    exit 1
-fi
-
-IMAGE_NAMES=()
-# Add all unique positional input params to IMAGE_NAMES array
-for i in "$@"; do
-    if [[ ! "${IMAGE_NAMES[@]}" =~ "$i" ]]; then
-        IMAGE_NAMES+=("$i")
-    fi
-done
-
-SCAN_IMAGES=()
-FAILED_IMAGES=()
-
-# Make sure all images are available locally, add to FAILED_IMAGES array if not
-for i in "${IMAGE_NAMES[@]}"; do
-    if [[ "$p_flag" ]]; then
-        printf '\n%s\n' "Pulling image -- $i"
-        docker pull $i || true
-    fi
-
-    docker inspect "$i" &> /dev/null || FAILED_IMAGES+=("$i")
-
-    if [[ ! "${FAILED_IMAGES[@]}" =~ "$i" ]]; then
-        SCAN_IMAGES+=("$i")
-    fi
-done
-
-# Give error message on any invalid image names
-if [[ "${#FAILED_IMAGES[@]}" -gt 0 ]]; then
-    printf '\n%s\n\n' "### WARNING - Please pull remote image, or build/tag all local images before attempting analysis again. ###" >&2
-
-    if [[ "${#FAILED_IMAGES[@]}" -ge "${#IMAGE_NAMES[@]}" ]]; then
-        printf '\n\t%s\n\n' "ERROR - no local docker images specified in script input: ${0##*/} ${IMAGE_NAMES[*]}" >&2
-        display_usage >&2
-        exit 1
-    fi
-
-    for i in "${FAILED_IMAGES[@]}"; do
-        printf '\t%s\n' "Could not find image locally -- $i" >&2
-    done
-fi
-
-# Check if env var is overriding the inline-scan image to utilize.
-if [[ -z "$ANCHORE_CI_IMAGE" ]]; then
-    printf '\n%s\n' "Pulling $INLINE_SCAN_IMAGE"
-    docker pull "$INLINE_SCAN_IMAGE"
-else
-    printf '\n%s\n' "Using local image for scanning -- $INLINE_SCAN_IMAGE"
-fi
-
-COPY_CMDS=()
-CREATE_CMD=()
-DOCKER_NAME="${RANDOM:-TEMP}-inline-anchore-engine"
-RUN_CMD=("docker run -i --name $DOCKER_NAME $INLINE_SCAN_IMAGE")
-
-if [[ "$v_flag" ]]; then
-    printf '\n%s\n' "Creating volume mount -- ${VOLUME_PATH}:/anchore-engine"
-    CREATE_CMD=('docker create -v "${VOLUME_PATH}:/anchore-engine:rw" --name "$DOCKER_NAME" "$INLINE_SCAN_IMAGE"')
-else
-    CREATE_CMD=('docker create --name "$DOCKER_NAME" "$INLINE_SCAN_IMAGE"')
-fi
-
-if [[ "$f_flag" ]]; then
-    CREATE_CMD+=('-f')
-    RUN_CMD+=('-f')
-fi
-
-if [[ "$r_flag" ]]; then
-    CREATE_CMD+=('-r')
-    RUN_CMD+=('-r')
-fi
-
-if [[ "$t_flag" ]]; then
-    CREATE_CMD+=('-t "$TIMEOUT"')
-    RUN_CMD+=('-t "$TIMEOUT"')
-fi
-
-# If no files need to be copied to container, pipe docker save output to stdin of docker run command.
-if [[ ! "$d_flag" ]] && [[ ! "$v_flag" ]] && [[ ! "$b_flag" ]] && [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
-    printf '\n%s' "Preparing ${SCAN_IMAGES[*]} for analysis... "
-    RUN_CMD+=('-i "${SCAN_IMAGES[*]}"')
-
-    # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
-    if [[ ! "${SCAN_IMAGES[*]}" =~ [:]+ ]]; then
-        docker save "${SCAN_IMAGES[*]}:latest" | eval "${RUN_CMD[*]}"
-    else
-        docker save "${SCAN_IMAGES[*]}" | eval "${RUN_CMD[*]}"
-    fi
-else
-    # Prepare commands for container creation & copying all files to container.
-    if [[ "$b_flag" ]]; then
-        CREATE_CMD+=('-b "$POLICY_BUNDLE"')
-        COPY_CMDS+=('docker cp "$POLICY_BUNDLE" "${DOCKER_NAME}:/anchore-engine/$(basename $POLICY_BUNDLE)";')
-    fi
-    
-    if [[ "$d_flag" ]] && [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
-        CREATE_CMD+=('-d "$DOCKERFILE" -i "${SCAN_IMAGES[*]}"')
-        COPY_CMDS+=('docker cp "$DOCKERFILE" "${DOCKER_NAME}:/anchore-engine/$(basename $DOCKERFILE)";')
-    fi
-
-    docker_id=$(eval "${CREATE_CMD[*]}")
-    eval "${COPY_CMDS[*]}"
-    
-    IMAGE_FILES=()
-    # Save all image files to /tmp and copy to created container
-    for image in "${SCAN_IMAGES[@]}"; do
-        base_image_name=$(basename "$image")
-        printf '\n%s' "Preparing $image for analysis... "
-        if [[ "$base_image_name" =~ [:]{1} ]]; then
-            repo="${base_image_name%:*}"
-            tag="${base_image_name#*:}"
-        else
-            repo="$base_image_name"
-            tag="latest"
-        fi
-        save_file_name="${repo}+${tag}.tar" 
-        IMAGE_FILES+=("$save_file_name")
-        
-        if [[ "$v_flag" ]]; then
-            save_file_path="${VOLUME_PATH}/${save_file_name}"
-        else
-            mkdir -p /tmp/anchore
-            save_file_path="/tmp/anchore/${save_file_name}"
-        fi
-
-        # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
-        if [[ ! "$image" =~ [:]+ ]]; then
-            docker save "${image}:latest" -o "$save_file_path"
-        else
-            docker save "$image" -o "$save_file_path"
-        fi
-
-        if [[ -f "$save_file_path" ]]; then
-            chmod +r "$save_file_path"
-            printf '%s' "Successfully prepared image archive -- $save_file_path"
-        else
-            printf '\n\t%s\n\n' "ERROR - unable to save docker image to $save_file_path." >&2
-            display_usage >&2
-            exit 1
-        fi
-
-        if [[ ! "$v_flag" ]]; then
-            docker cp "$save_file_path" "${DOCKER_NAME}:/anchore-engine/${save_file_name}"
-            rm -f "$save_file_path"
-        fi
-    done
-    echo
-    docker start -ia "$DOCKER_NAME"
-fi
-
-if [[ "$r_flag" ]]; then
-    echo "Copying analysis reports from ${DOCKER_NAME} to ${PWD}/anchore-reports/"
-    docker cp "${DOCKER_NAME}:/anchore-engine/anchore-reports/" ./
-fi
+main "$@"
