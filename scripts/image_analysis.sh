@@ -7,43 +7,45 @@ cat << EOF
 
 Anchore Engine Inline Analyzer --
 
-  Wrapper script for performing analysis on local docker images, utilizing Anchore Engine analyzer subsystem.
+  Script for performing analysis on local docker images, utilizing Anchore Engine analyzer subsystem.
   After image is analyzed, the resulting Anchore image archive is sent to a remote Anchore Engine installation
-  using the -u <URL> option.
+  using the -r <URL> option. This allows inline_analysis data to be persisted & utilized for reporting.
 
   Images should be built & tagged locally.
 
-    Usage: ${0##*/} analyze -h <URL> -u <USER> -p <PASSWORD> [ OPTIONS ] <FULL_IMAGE_TAG>
+    Usage: ${0##*/} analyze -r <REMOTE_URL> -u <USER> -P <PASSWORD> [ OPTIONS ] <FULL_IMAGE_TAG>
 
-      -h <TEXT> [required] URL to remote Anchore Engine API endpoint host (ex: -h 'https://anchore.example.com:8228/v1')
-      -u <TEXT> [required] Username for remote Anchore Engine auth (ex: -u 'admin')
-      -p <TEXT> [required] Password for remote Anchore Engine auth (ex: -p 'foobar')
+      -r <TEXT>  [required] URL to remote Anchore Engine API endpoint (ex: -h 'https://anchore.example.com:8228/v1')
+      -u <TEXT>  [required] Username for remote Anchore Engine auth (ex: -u 'admin')
+      -P <TEXT>  [required] Password for remote Anchore Engine auth (ex: -P 'foobar')
 
-      -a <TEXT> [optional] Add annotations (ex: -a 'key=value,key=value')
-      -s <PATH> [optional] Specify image digest (ex: -d 'sha256:<64 hex characters>')
-      -d <PATH> [optional] Path to Dockerfile (ex: -f ./Dockerfile)
-      -i <TEXT> [optional] Specify image ID within Anchore Engine (ex: -i '<64 hex characters>')
-      -f <PATH> [optional] Path to Docker image manifest file (ex: -m ./manifest.json)
+      -a <TEXT>  [optional] Add annotations (ex: -a 'key=value,key=value')
+      -d <PATH>  [optional] Specify image digest (ex: -d 'sha256:<64 hex characters>')
+      -f <PATH>  [optional] Path to Dockerfile (ex: -f ./Dockerfile)
+      -i <TEXT>  [optional] Specify image ID used within Anchore Engine (ex: -i '<64 hex characters>')
+      -m <PATH>  [optional] Path to Docker image manifest (ex: -m ./manifest.json)
+      -t <TEXT>  [optional] Specify timeout for image analysis in seconds. Defaults to 300s. (ex: -t 500)
+
 EOF
 }
 
 # parse options
-while getopts ':h:u:p:a:s:d:i:f' option; do
+while getopts ':r:u:P:a:d:f:i:m:t:h' option; do
     case "${option}" in
-        h  ) h_flag=true; ANCHORE_URL="${OPTARG%%/v1}";;
+        r  ) r_flag=true; ANCHORE_URL="${OPTARG%%/v1}";;
         u  ) u_flag=true; ANCHORE_USER="$OPTARG";;
-        p  ) p_flag=true; ANCHORE_PASS="$OPTARG";;
+        P  ) P_flag=true; ANCHORE_PASS="$OPTARG";;
         a  ) a_flag=true; ANCHORE_ANNOTATIONS="$OPTARG";;
-        s  ) s_flag=true; IMAGE_DIGEST_SHA="$OPTARG";;
-        d  ) d_flag=true; DOCKERFILE="/anchore-engine/$(basename $OPTARG)";;
-        i  ) i_flag=true; IMAGE_ID="$OPTARG";;
-        f  ) f_flag=true; MANIFEST_FILE="$OPTARG";;
+        d  ) d_flag=true; IMAGE_DIGEST_SHA="$OPTARG";;
+        f  ) f_flag=true; DOCKERFILE="/anchore-engine/$(basename $OPTARG)";;
+        i  ) i_flag=true; ANCHORE_IMAGE_ID="$OPTARG";;
+        m  ) m_flag=true; MANIFEST_FILE="$OPTARG";;
+        t  ) t_flag=true; TIMEOUT="$OPTARG";;
         h  ) display_usage; exit;;
         \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
         :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
     esac
 done
-
 shift "$((OPTIND - 1))"
 
 export TIMEOUT=${TIMEOUT:=300}
@@ -58,7 +60,7 @@ else
 fi
 
 # validate URL is functional anchore-engine api endpoint
-if [[ ! "$h_flag" ]]; then
+if [[ ! "$r_flag" ]]; then
     echo "ERROR - must provide an anchore-engine endpoint" >&2
     display_usage >&2
     exit 1
@@ -66,10 +68,8 @@ elif ! curl --fail "${ANCHORE_URL%%/}/v1"; then
     echo "ERROR - invalid anchore-engine endpoint provided - $ANCHORE_URL" >&2
     display_usage >&2
     exit 1
-fi
-
 # validate user & password are provided & correct
-if [[ ! "$u_flag" ]] || [[ ! "$p_flag" ]]; then
+elif [[ ! "$u_flag" ]] || [[ ! "$P_flag" ]]; then
     echo "ERROR - must provide anchore-engine username & password" >&2
     display_usage >&2
     exit 1
@@ -77,17 +77,11 @@ elif ! curl --fail -u "${ANCHORE_USER}:${ANCHORE_PASS}" "${ANCHORE_URL%%/}/v1/st
     echo "ERROR - invalid anchore-engine username/password provided" >&2
     display_usage >&2
     exit 1
-fi
-
-# validate path to dockerfile
-if [[ "$d_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
+elif [[ "$f_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
     echo "ERROR - invalid path to dockerfile provided - $DOCKERFILE" >&2
     display_usage >&2
     exit 1
-fi
-
-# validate path to image manifest
-if [[ "$m_flag" ]] && [[ ! -f "$MANIFEST_FILE" ]]; then
+elif [[ "$m_flag" ]] && [[ ! -f "$MANIFEST_FILE" ]]; then
     echo "ERROR - invalid path to image manifest file provided - $MANIFEST_FILE" >&2
     display_usage >&2
     exit 1
@@ -108,7 +102,7 @@ else
     exit 1
 fi
 
-if [[ ! "$m_flag" ]] && [[ ! "$s_flag" ]]; then
+if [[ ! "$m_flag" ]] && [[ ! "$d_flag" ]]; then
     IMAGE_DIGEST_SHA=$(skopeo inspect --raw "docker-archive:///${IMAGE_FILE_NAME}" | jq -r .config.digest)
 fi
 
@@ -124,4 +118,9 @@ ANALYZE_CMD+=('"$IMAGE_FILE_NAME" "$ANALYSIS_FILE_NAME"')
 eval "${ANALYZE_CMD[*]}"
 
 # curl archive tarball to engine URL
-curl --fail -u "${ANCHORE_USER}:${ANCHORE_PASS}" -F "archive_file=@${ANALYSIS_FILE_NAME}" "$ANCHORE_URL"
+if [[ -f "$ANALYSIS_FILE_NAME" ]]; then
+    curl --fail -u "${ANCHORE_USER}:${ANCHORE_PASS}" -F "archive_file=@${ANALYSIS_FILE_NAME}" "${ANCHORE_URL%%/}/v1/import/images"
+else
+    printf '\n\t%s\n\n' "ERROR - analysis file invalid: $ANALYSIS_FILE_NAME. An error occured during analysis."
+    exit 1
+fi
