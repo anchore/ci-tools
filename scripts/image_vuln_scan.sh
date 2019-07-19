@@ -55,6 +55,12 @@ shift "$((OPTIND - 1))"
 
 export TIMEOUT=${TIMEOUT:=300}
 
+if [[ "$#" -lt 1 ]]; then
+    printf '\n\t%s\n\n' "ERROR - must specify options when using ${0##*/}" >&2
+    display_usage >&2
+    exit 1
+fi
+
 # Test options to ensure they're all valid. Error & display usage if not.
 if [[ "$d_flag" ]] && [[ ! "$i_flag" ]]; then
     printf '\n\t%s\n\n' "ERROR - must specify an image when passing a Dockerfile." >&2
