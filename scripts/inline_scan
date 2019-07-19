@@ -61,6 +61,7 @@ Anchore Engine Inline Analyzer --
       -i <TEXT>  [optional] Specify image ID used within Anchore Engine (ex: -i '<64 hex characters>')
       -m <PATH>  [optional] Path to Docker image manifest (ex: -m ./manifest.json)
       -t <TEXT>  [optional] Specify timeout for image analysis in seconds. Defaults to 300s. (ex: -t 500)
+      -g  [optional] Generate an image digest from docker save tarball
       -p  [optional] Pull remote docker images
 
 EOF
@@ -69,6 +70,12 @@ EOF
 main() {
     trap 'cleanup' EXIT ERR SIGTERM 
     trap 'interupt' SIGINT
+
+    if [[ "$#" -lt 1 ]]; then
+        printf '\n\t%s\n\n' "ERROR - must specify options when using ${0##*/}" >&2
+        display_usage >&2
+        exit 1
+    fi
     
     if [[ "$1" == 'analyze' ]]; then
         shift "$((OPTIND))"
@@ -90,7 +97,7 @@ main() {
 
 get_and_validate_analyzer_options() {
     #Parse options
-    while getopts ':r:u:P:a:d:f:i:m:t:ph' option; do
+    while getopts ':r:u:P:a:d:f:i:m:t:pgh' option; do
         case "${option}" in
             r  ) r_flag=true; ANCHORE_URL="${OPTARG%%/v1}";;
             u  ) u_flag=true; ANCHORE_USER="$OPTARG";;
@@ -102,9 +109,10 @@ get_and_validate_analyzer_options() {
             m  ) m_flag=true; MANIFEST_FILE="$OPTARG";;
             t  ) t_flag=true; TIMEOUT="$OPTARG";;
             p  ) p_flag=true;;
+            g  ) g_flag=true;;
             h  ) display_usage_analyzer; exit;;
-            \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage_analyzer >&2; exit 1;;
-            :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage_analyzer >&2; exit 1;;
+            \? ) printf "\n\t%s\n\n" "Invalid option: -${OPTARG}" >&2; display_usage_analyzer >&2; exit 1;;
+            :  ) printf "\n\t%s\n\n%s\n\n" "Option -${OPTARG} requires an argument." >&2; display_usage_analyzer >&2; exit 1;;
         esac
     done
     shift "$((OPTIND - 1))"
@@ -120,6 +128,25 @@ get_and_validate_analyzer_options() {
         exit 1
     elif [[ "${#@}" -lt 1 ]]; then
         printf '\n\t%s\n\n' "ERROR - must specify an image to analyze" >&2
+        display_usage_analyzer >&2
+        exit 1
+    elif [[ "$a_flag" ]]; then
+        # transform all commas to spaces & cast to an array
+        local annotationArray=(${ANCHORE_ANNOTATIONS//,/ })
+        # get count of = in annotation string
+        local numberKeys=${ANCHORE_ANNOTATIONS//[^=]}
+        # compare number of elements in array with number of = in annotation string
+        if [[ "${#numberKeys}" -ne "${#annotationArray[@]}" ]]; then
+            printf '\n\t%s\n\n' "ERROR - $ANCHORE_ANNOTATIONS is not a valid input for -a option" >&2
+            display_usage_analyzer >&2
+            exit 1
+        fi
+    elif [[ ! "$g_flag" ]] && [[ ! "$d_flag" ]] && [[ ! "$m_flag" ]]; then
+        printf '\n\t%s\n\n' "ERROR - must provide an image digest, manifest, or specify -g to generate a digest" >&2
+        display_usage_analyzer >&2
+        exit 1
+    elif [[ "$g_flag" ]] && ([[ "$d_flag" ]] || [[ "$m_flag" ]]); then
+        printf '\n\t%s\n\n' "ERROR - cannot generate digest when a manifest or digest is provided" >&2
         display_usage_analyzer >&2
         exit 1
     elif [[ "$f_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
@@ -178,7 +205,7 @@ get_and_validate_scanner_options() {
         printf '\n\t%s\n\n' "ERROR - Dockerfile: $DOCKERFILE does not exist" >&2
         display_usage_scanner >&2
         exit 1
-    elif [[ ! "v_flag" ]] && [[ "${#@}" -eq 0 ]]; then
+    elif [[ ! "$v_flag" ]] && [[ "${#@}" -eq 0 ]]; then
         printf '\n\t%s\n\n' "ERROR - ${0##*/} requires at least 1 image name as input, unless utilizing -v option" >&2
         display_usage_scanner >&2
         exit 1
@@ -254,6 +281,7 @@ prepare_inline_container() {
         printf '\n%s\n' "Using local image for scanning -- $INLINE_SCAN_IMAGE"
     fi
 
+    # setup command arrays to eval & run after adding all required options
     DOCKER_NAME="${RANDOM:-TEMP}-inline-anchore-engine"
     CREATE_CMD=('docker create --name "$DOCKER_NAME"')
     RUN_CMD=('docker run -i --name "$DOCKER_NAME"')
@@ -301,7 +329,6 @@ start_vuln_scan() {
             CREATE_CMD+=('-b "$POLICY_BUNDLE"')
             COPY_CMDS+=('docker cp "$POLICY_BUNDLE" "${DOCKER_NAME}:/anchore-engine/$(basename $POLICY_BUNDLE)";')
         fi
-        
         if [[ "$d_flag" ]] && [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
             CREATE_CMD+=('-d "$DOCKERFILE" -i "${SCAN_IMAGES[*]}"')
             COPY_CMDS+=('docker cp "$DOCKERFILE" "${DOCKER_NAME}:/anchore-engine/$(basename $DOCKERFILE)";')
@@ -309,50 +336,7 @@ start_vuln_scan() {
 
         docker_id=$(eval "${CREATE_CMD[*]}")
         eval "${COPY_CMDS[*]}"
-        
-        IMAGE_FILES=()
-        # Save all image files to /tmp and copy to created container
-        for image in "${SCAN_IMAGES[@]}"; do
-            base_image_name=$(basename "$image")
-            printf '\n%s' "Preparing $image for scanning... "
-            if [[ "$base_image_name" =~ [:]{1} ]]; then
-                repo="${base_image_name%:*}"
-                tag="${base_image_name#*:}"
-            else
-                repo="$base_image_name"
-                tag="latest"
-            fi
-            save_file_name="${repo}+${tag}.tar" 
-            IMAGE_FILES+=("$save_file_name")
-            
-            if [[ "$v_flag" ]]; then
-                save_file_path="${VOLUME_PATH}/${save_file_name}"
-            else
-                mkdir -p /tmp/anchore
-                save_file_path="/tmp/anchore/${save_file_name}"
-            fi
-
-            # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
-            if [[ ! "$image" =~ [:]+ ]]; then
-                docker save "${image}:latest" -o "$save_file_path"
-            else
-                docker save "$image" -o "$save_file_path"
-            fi
-
-            if [[ -f "$save_file_path" ]]; then
-                chmod +r "$save_file_path"
-                printf '%s' "Successfully prepared image archive -- $save_file_path"
-            else
-                printf '\n\t%s\n\n' "ERROR - unable to save docker image to $save_file_path." >&2
-                display_usage >&2
-                exit 1
-            fi
-
-            if [[ ! "$v_flag" ]]; then
-                docker cp "$save_file_path" "${DOCKER_NAME}:/anchore-engine/${save_file_name}"
-                rm -f "$save_file_path"
-            fi
-        done
+        save_and_copy_images
         echo
         docker start -ia "$DOCKER_NAME"
     fi
@@ -367,9 +351,24 @@ start_analysis() {
     RUN_CMD+=('-r "$ANCHORE_URL"')
     RUN_CMD+=('-u "$ANCHORE_USER"')
     RUN_CMD+=('-P "$ANCHORE_PASS"')
-    if [[ ! "$d_flag" ]] && [[ ! "$m_flag" ]]; then
+    CREATE_CMD+=('-r "$ANCHORE_URL"')
+    CREATE_CMD+=('-u "$ANCHORE_USER"')
+    CREATE_CMD+=('-P "$ANCHORE_PASS"')
+    if [[ "$d_flag" ]]; then
+        CREATE_CMD+=('-d "$IMAGE_DIGEST_SHA"')
+        RUN_CMD+=('-d "$IMAGE_DIGEST_SHA"')
+    fi
+    if [[ "$i_flag" ]]; then
+        CREATE_CMD+=('-i "$ANCHORE_IMAGE_ID"')
+        RUN_CMD+=('-i "$ANCHORE_IMAGE_ID"')
+    fi
+    if [[ "$a_flag" ]]; then
+        CREATE_CMD+=('-a "$ANCHORE_ANNOTATIONS"')
+        RUN_CMD+=('-a "$ANCHORE_ANNOTATIONS"')
+    fi
+    if [[ "$g_flag" ]]; then
         printf '\n%s' "Preparing ${SCAN_IMAGES[*]} for analysis... "
-        RUN_CMD+=('"${SCAN_IMAGES[*]}"')
+        RUN_CMD+=('-g "${SCAN_IMAGES[*]}"')
 
         # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
         if [[ ! "${SCAN_IMAGES[*]}" =~ [:]+ ]]; then
@@ -378,11 +377,70 @@ start_analysis() {
             docker save "${SCAN_IMAGES[*]}" | eval "${RUN_CMD[*]}"
         fi
     else
-        true
-        # Copy manifest & dockerfile to container
-        # Docker save image to temp location & copy to container
-        # start container
+        COPY_CMDS=()
+        # Prepare commands for container creation & copying all files to container.
+        if [[ "$m_flag" ]]; then
+            CREATE_CMD+=('-m "$MANIFEST_FILE"')
+            COPY_CMDS+=('docker cp "$MANIFEST_FILE" "${DOCKER_NAME}:/anchore-engine/$(basename $MANIFEST_FILE)";')
+        fi
+        if [[ "$f_flag" ]]; then
+            CREATE_CMD+=('-f "$DOCKERFILE"')
+            COPY_CMDS+=('docker cp "$DOCKERFILE" "${DOCKER_NAME}:/anchore-engine/$(basename $DOCKERFILE)";')
+        fi
+
+        CREATE_CMD+=("${SCAN_IMAGES[*]}")
+        docker_id=$(eval "${CREATE_CMD[*]}")
+        eval "${COPY_CMDS[*]}"
+        save_and_copy_images
+        echo
+        docker start -ia "$DOCKER_NAME"
     fi
+}
+
+save_and_copy_images() {
+    IMAGE_FILES=()
+    # Save all image files to /tmp and copy to created container
+    for image in "${SCAN_IMAGES[@]}"; do
+        base_image_name=$(basename "$image")
+        printf '\n%s' "Preparing $image for scanning... "
+        if [[ "$base_image_name" =~ [:]{1} ]]; then
+            repo="${base_image_name%:*}"
+            tag="${base_image_name#*:}"
+        else
+            repo="$base_image_name"
+            tag="latest"
+        fi
+        save_file_name="${repo}+${tag}.tar" 
+        IMAGE_FILES+=("$save_file_name")
+        
+        if [[ "$v_flag" ]]; then
+            save_file_path="${VOLUME_PATH}/${save_file_name}"
+        else
+            mkdir -p /tmp/anchore
+            save_file_path="/tmp/anchore/${save_file_name}"
+        fi
+
+        # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
+        if [[ ! "$image" =~ [:]+ ]]; then
+            docker save "${image}:latest" -o "$save_file_path"
+        else
+            docker save "$image" -o "$save_file_path"
+        fi
+
+        if [[ -f "$save_file_path" ]]; then
+            chmod +r "$save_file_path"
+            printf '%s' "Successfully prepared image archive -- $save_file_path"
+        else
+            printf '\n\t%s\n\n' "ERROR - unable to save docker image to $save_file_path." >&2
+            display_usage >&2
+            exit 1
+        fi
+
+        if [[ ! "$v_flag" ]]; then
+            docker cp "$save_file_path" "${DOCKER_NAME}:/anchore-engine/${save_file_name}"
+            rm -f "$save_file_path"
+        fi
+    done
 }
 
 interupt() {

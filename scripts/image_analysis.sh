@@ -25,12 +25,13 @@ Anchore Engine Inline Analyzer --
       -i <TEXT>  [optional] Specify image ID used within Anchore Engine (ex: -i '<64 hex characters>')
       -m <PATH>  [optional] Path to Docker image manifest (ex: -m ./manifest.json)
       -t <TEXT>  [optional] Specify timeout for image analysis in seconds. Defaults to 300s. (ex: -t 500)
+      -g  [optional] Generate an image digest from docker save tarball
 
 EOF
 }
 
 # parse options
-while getopts ':r:u:P:a:d:f:i:m:t:h' option; do
+while getopts ':r:u:P:a:d:f:i:m:t:gh' option; do
     case "${option}" in
         r  ) r_flag=true; ANCHORE_URL="${OPTARG%%/v1}";;
         u  ) u_flag=true; ANCHORE_USER="$OPTARG";;
@@ -39,8 +40,9 @@ while getopts ':r:u:P:a:d:f:i:m:t:h' option; do
         d  ) d_flag=true; IMAGE_DIGEST_SHA="$OPTARG";;
         f  ) f_flag=true; DOCKERFILE="/anchore-engine/$(basename $OPTARG)";;
         i  ) i_flag=true; ANCHORE_IMAGE_ID="$OPTARG";;
-        m  ) m_flag=true; MANIFEST_FILE="$OPTARG";;
+        m  ) m_flag=true; MANIFEST_FILE="/anchore-engine/$(basename $OPTARG)";;
         t  ) t_flag=true; TIMEOUT="$OPTARG";;
+        g  ) g_flag=true;;
         h  ) display_usage; exit;;
         \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
         :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
@@ -102,7 +104,7 @@ else
     exit 1
 fi
 
-if [[ ! "$m_flag" ]] && [[ ! "$d_flag" ]]; then
+if [[ "$g_flag" ]]; then
     IMAGE_DIGEST_SHA=$(skopeo inspect --raw "docker-archive:///${IMAGE_FILE_NAME}" | jq -r .config.digest)
 fi
 
@@ -112,6 +114,22 @@ ANALYZE_CMD=('anchore-manager analyzers exec')
 ANALYZE_CMD+=('--tag "$IMAGE_TAG"') 
 if [[ ! -z "$IMAGE_DIGEST_SHA" ]]; then
     ANALYZE_CMD+=('--digest "$IMAGE_DIGEST_SHA"') 
+fi
+if [[ "$m_flag" ]]; then
+    ANALYZE_CMD+=('--manifest "$MANIFEST_FILE"')
+fi
+if [[ "$f_flag" ]]; then
+    ANALYZE_CMD+=('--dockerfile "$DOCKERFILE"')
+fi
+if [[ "$i_flag" ]]; then
+    ANALYZE_CMD+=('--image-id "$ANCHORE_IMAGE_ID"')
+fi
+if [[ "$a_flag" ]]; then
+    # transform all commas to spaces & cast to an array
+    local annotationArray=(${ANCHORE_ANNOTATIONS//,/ })
+    for i in "${annotationArray[@]}"; do
+        ANALYZE_CMD+=("--annotation $i")
+    done
 fi
 
 ANALYZE_CMD+=('"$IMAGE_FILE_NAME" "$ANALYSIS_FILE_NAME"')

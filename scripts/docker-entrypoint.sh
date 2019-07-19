@@ -2,7 +2,7 @@
 
 set -exo pipefail
 
-export TIMEOUT=${TIMEOUT:=60}
+export TIMEOUT=${TIMEOUT:=300}
 
 main() {
     # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
@@ -16,16 +16,14 @@ main() {
         start_services
         exec image_vuln_scan.sh "${@:2}"
     elif [[ "$1" == 'analyze' ]]; then
-        start_services
+        setup_env
         exec image_analysis.sh "${@:2}"
     else
         exec "$@"
     fi
 }
 
-start_services() {
-    local exec_anchore="$1"
-
+setup_env() {
     export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-mysecretpassword}"
     export ANCHORE_DB_PASSWORD="$POSTGRES_PASSWORD"
     export ANCHORE_DB_USER="$POSTGRES_USER"
@@ -34,6 +32,11 @@ start_services() {
     export ANCHORE_HOST_ID="$ANCHORE_ENDPOINT_HOSTNAME"
     export ANCHORE_CLI_URL="http://${ANCHORE_ENDPOINT_HOSTNAME}:8228/v1"
     export PATH=${PATH}:/usr/pgsql-${PG_MAJOR}/bin/
+}
+
+start_services() {
+    setup_env
+    local exec_anchore="$1"
 
     if [ -f "/opt/rh/rh-python36/enable" ]; then
         source /opt/rh/rh-python36/enable
