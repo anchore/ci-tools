@@ -37,6 +37,12 @@ error() {
 
 trap 'error' SIGINT
 
+if [[ "$#" -lt 1 ]]; then
+    printf '\n\t%s\n\n' "ERROR - must specify options when using ${0##*/}" >&2
+    display_usage >&2
+    exit 1
+fi
+
 # Parse options
 while getopts ':d:b:i:fhr' option; do
     case "${option}" in
@@ -54,12 +60,6 @@ done
 shift "$((OPTIND - 1))"
 
 export TIMEOUT=${TIMEOUT:=300}
-
-if [[ "$#" -lt 1 ]]; then
-    printf '\n\t%s\n\n' "ERROR - must specify options when using ${0##*/}" >&2
-    display_usage >&2
-    exit 1
-fi
 
 # Test options to ensure they're all valid. Error & display usage if not.
 if [[ "$d_flag" ]] && [[ ! "$i_flag" ]]; then
