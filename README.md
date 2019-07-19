@@ -23,7 +23,7 @@ After building the inline_scan container locally, the `scripts/inline_scan` scri
 Wrapper script for inline_scan container, requires Docker & BASH to be installed on system running the script.
 * Call script directly from github with: 
   
-  ```curl -s https://raw.githubusercontent.com/anchore/ci-tools/scripts/inline_scan | bash -s -- [OPTIONS] <IMAGE_NAME>```
+  ```curl -s https://ci-tools.anchore.io/inline_scan-v0.4.1 | bash -s -- [OPTIONS] <IMAGE_NAME>```
 
 #### Pull multiple images from dockerhub, scan and generate reports.
 ```bash
