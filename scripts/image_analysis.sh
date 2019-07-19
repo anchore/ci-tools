@@ -30,12 +30,6 @@ Anchore Engine Inline Analyzer --
 EOF
 }
 
-if [[ "$#" -lt 1 ]]; then
-    printf '\n\t%s\n\n' "ERROR - must specify options when using ${0##*/}" >&2
-    display_usage >&2
-    exit 1
-fi
-
 # parse options
 while getopts ':r:u:P:a:d:f:i:m:t:gh' option; do
     case "${option}" in
