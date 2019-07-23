@@ -62,7 +62,7 @@ Anchore Engine Inline Analyzer --
       -m <PATH>  [optional] Path to Docker image manifest (ex: -m ./manifest.json)
       -t <TEXT>  [optional] Specify timeout for image analysis in seconds. Defaults to 300s. (ex: -t 500)
       -g  [optional] Generate an image digest from docker save tarball
-      -p  [optional] Pull remote docker images
+      -p  [optional] Pull docker image from registry
 
 EOF
 }
@@ -128,6 +128,24 @@ get_and_validate_analyzer_options() {
         exit 1
     elif [[ "${#@}" -lt 1 ]]; then
         printf '\n\t%s\n\n' "ERROR - must specify an image to analyze" >&2
+        display_usage_analyzer >&2
+        exit 1
+        # validate URL is functional anchore-engine api endpoint
+    elif [[ ! "$r_flag" ]]; then
+        printf '\n\t%s\n\n' "ERROR - must provide an anchore-engine endpoint" >&2
+        display_usage_analyzer >&2
+        exit 1
+    elif ! curl --fail "${ANCHORE_URL%%/}/v1"; then
+        printf '\n\t%s\n\n' "ERROR - invalid anchore-engine endpoint provided - $ANCHORE_URL" >&2
+        display_usage_analyzer >&2
+        exit 1
+    # validate user & password are provided & correct
+    elif [[ ! "$u_flag" ]] || [[ ! "$P_flag" ]]; then
+        printf '\n\t%s\n\n' "ERROR - must provide anchore-engine username & password" >&2
+        display_usage_analyzer >&2
+        exit 1
+    elif ! curl --fail -u "${ANCHORE_USER}:${ANCHORE_PASS}" "${ANCHORE_URL%%/}/v1/status"; then
+        printf '\n\t%s\n\n' "ERROR - invalid anchore-engine username/password provided" >&2
         display_usage_analyzer >&2
         exit 1
     elif [[ "$a_flag" ]]; then
@@ -348,12 +366,6 @@ start_vuln_scan() {
 }
 
 start_analysis() {
-    RUN_CMD+=('-r "$ANCHORE_URL"')
-    RUN_CMD+=('-u "$ANCHORE_USER"')
-    RUN_CMD+=('-P "$ANCHORE_PASS"')
-    CREATE_CMD+=('-r "$ANCHORE_URL"')
-    CREATE_CMD+=('-u "$ANCHORE_USER"')
-    CREATE_CMD+=('-P "$ANCHORE_PASS"')
     if [[ "$d_flag" ]]; then
         CREATE_CMD+=('-d "$IMAGE_DIGEST_SHA"')
         RUN_CMD+=('-d "$IMAGE_DIGEST_SHA"')
@@ -395,6 +407,15 @@ start_analysis() {
         echo
         docker start -ia "$DOCKER_NAME"
     fi
+
+    # # curl archive tarball to engine URL
+    # if [[ -f "$ANALYSIS_FILE_NAME" ]]; then
+    #     curl --fail -u "${ANCHORE_USER}:${ANCHORE_PASS}" -F "archive_file=@${ANALYSIS_FILE_NAME}" "${ANCHORE_URL%%/}/v1/import/images"
+    # else
+    #     printf '\n\t%s\n\n' "ERROR - analysis file invalid: $ANALYSIS_FILE_NAME. An error occured during analysis."  >&2
+    #     display_usage >&2
+    #     exit 1
+    # fi
 }
 
 save_and_copy_images() {
