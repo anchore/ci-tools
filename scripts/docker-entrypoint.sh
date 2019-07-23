@@ -2,8 +2,6 @@
 
 set -exo pipefail
 
-export TIMEOUT=${TIMEOUT:=300}
-
 main() {
     # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
     if [[ "$1" = 'debug' ]]; then
@@ -32,6 +30,7 @@ setup_env() {
     export ANCHORE_HOST_ID="$ANCHORE_ENDPOINT_HOSTNAME"
     export ANCHORE_CLI_URL="http://${ANCHORE_ENDPOINT_HOSTNAME}:8228/v1"
     export PATH=${PATH}:/usr/pgsql-${PG_MAJOR}/bin/
+    export TIMEOUT=${TIMEOUT:=300}
 }
 
 start_services() {

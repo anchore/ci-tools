@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eo pipefail
+set -exo pipefail
 
 display_usage() {
 cat << EOF
@@ -25,68 +25,10 @@ Anchore Engine Inline Scan --
 EOF
 }
 
-error() {
-    set +e
-    printf '\n\n\t%s\n\n' "ERROR - $0 received SIGTERM or SIGINT" >&2
-    # kill python process in wait loop
-    (pkill -f python3 &> /dev/null)
-    # kill skopeo process in wait loop
-    (pkill -f skopeo &> /dev/null)
-    exit 130
-}
-
-trap 'error' SIGINT
-
-# Parse options
-while getopts ':d:b:i:fhr' option; do
-    case "${option}" in
-        d  ) d_flag=true; DOCKERFILE="/anchore-engine/$(basename $OPTARG)";;
-        b  ) b_flag=true; POLICY_BUNDLE="/anchore-engine/$(basename $OPTARG)";;
-        i  ) i_flag=true; IMAGE_NAME="$OPTARG";;
-        f  ) f_flag=true;;
-        r  ) r_flag=true;;
-        h  ) display_usage; exit;;
-        \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
-        :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
-    esac
-done
-
-shift "$((OPTIND - 1))"
-
-export TIMEOUT=${TIMEOUT:=300}
-
-# Test options to ensure they're all valid. Error & display usage if not.
-if [[ "$d_flag" ]] && [[ ! "$i_flag" ]]; then
-    printf '\n\t%s\n\n' "ERROR - must specify an image when passing a Dockerfile." >&2
-    display_usage >&2
-    exit 1
-elif [[ "$d_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
-    printf '\n\t%s\n\n' "ERROR - Can not find dockerfile at: $DOCKERFILE" >&2
-    display_usage >&2
-    exit 1
-elif [[ "$b_flag" ]] && [[ ! -f "$POLICY_BUNDLE" ]]; then
-    printf '\n\t%s\n\n' "ERROR - Can not find policy bundle file at: $POLICY_BUNDLE" >&2
-    display_usage >&2
-    exit 1
-fi
-
-if [[ "$i_flag" ]]; then
-    if [[ "$IMAGE_NAME" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
-        FILE_NAME="/anchore-engine/${BASH_REMATCH[2]}+${BASH_REMATCH[3]:-latest}.tar"
-        if [[ ! -f "$FILE_NAME" ]]; then
-            cat <&0 > "$FILE_NAME"
-            printf '%s\n' "Successfully prepared image archive -- $FILE_NAME"
-        fi
-    elif [[ -f "/anchore-engine/$(basename ${IMAGE_NAME})" ]]; then
-        FILE_NAME="/anchore-engine/$(basename ${IMAGE_NAME})"
-    else
-        printf '\n\t%s\n\n' "ERROR - Could not find image file $IMAGE_NAME" >&2
-        display_usage >&2
-        exit 1
-    fi
-fi
-
 main() {
+    trap 'error' SIGINT
+    get_and_validate_options "$@"
+
     SCAN_FILES=()
     FINISHED_IMAGES=()
 
@@ -148,6 +90,57 @@ main() {
     fi
 }
 
+get_and_validate_options() {
+    # Parse options
+    while getopts ':d:b:i:fhr' option; do
+        case "${option}" in
+            d  ) d_flag=true; DOCKERFILE="/anchore-engine/$(basename $OPTARG)";;
+            b  ) b_flag=true; POLICY_BUNDLE="/anchore-engine/$(basename $OPTARG)";;
+            i  ) i_flag=true; IMAGE_NAME="$OPTARG";;
+            f  ) f_flag=true;;
+            r  ) r_flag=true;;
+            h  ) display_usage; exit;;
+            \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
+            :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
+        esac
+    done
+
+    shift "$((OPTIND - 1))"
+
+    export TIMEOUT=${TIMEOUT:=300}
+
+    # Test options to ensure they're all valid. Error & display usage if not.
+    if [[ "$d_flag" ]] && [[ ! "$i_flag" ]]; then
+        printf '\n\t%s\n\n' "ERROR - must specify an image when passing a Dockerfile." >&2
+        display_usage >&2
+        exit 1
+    elif [[ "$d_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
+        printf '\n\t%s\n\n' "ERROR - Can not find dockerfile at: $DOCKERFILE" >&2
+        display_usage >&2
+        exit 1
+    elif [[ "$b_flag" ]] && [[ ! -f "$POLICY_BUNDLE" ]]; then
+        printf '\n\t%s\n\n' "ERROR - Can not find policy bundle file at: $POLICY_BUNDLE" >&2
+        display_usage >&2
+        exit 1
+    fi
+
+    if [[ "$i_flag" ]]; then
+        if [[ "$IMAGE_NAME" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
+            FILE_NAME="/anchore-engine/${BASH_REMATCH[2]}+${BASH_REMATCH[3]:-latest}.tar"
+            if [[ ! -f "$FILE_NAME" ]]; then
+                cat <&0 > "$FILE_NAME"
+                printf '%s\n' "Successfully prepared image archive -- $FILE_NAME"
+            fi
+        elif [[ -f "/anchore-engine/$(basename ${IMAGE_NAME})" ]]; then
+            FILE_NAME="/anchore-engine/$(basename ${IMAGE_NAME})"
+        else
+            printf '\n\t%s\n\n' "ERROR - Could not find image file $IMAGE_NAME" >&2
+            display_usage >&2
+            exit 1
+        fi
+    fi
+}
+
 start_scan() {
     local file="$1"
     local image_repo=""
@@ -199,6 +192,16 @@ anchore_analysis() {
     wait "$wait_proc"
 
     FINISHED_IMAGES+=("$anchore_image_name")
+}
+
+error() {
+    set +e
+    printf '\n\n\t%s\n\n' "ERROR - $0 received SIGTERM or SIGINT" >&2
+    # kill python process in wait loop
+    (pkill -f python3 &> /dev/null)
+    # kill skopeo process in wait loop
+    (pkill -f skopeo &> /dev/null)
+    exit 130
 }
 
 main "$@"
