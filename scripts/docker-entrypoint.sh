@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -exo pipefail
+set -eo pipefail
 
 main() {
     # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
