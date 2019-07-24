@@ -43,7 +43,7 @@ cat << EOF
 
 Anchore Engine Inline Analyzer --
 
-  Script for performing analysis on local docker images, utilizing Anchore Engine analyzer subsystem.
+  Script for performing analysis on local docker images, utilizing the Anchore Engine analyzer subsystem.
   After image is analyzed, the resulting Anchore image archive is sent to a remote Anchore Engine installation
   using the -r <URL> option. This allows inline_analysis data to be persisted & utilized for reporting.
 
@@ -76,7 +76,6 @@ main() {
         display_usage >&2
         exit 1
     fi
-    
     if [[ "$1" == 'analyze' ]]; then
         shift "$((OPTIND))"
         get_and_validate_analyzer_options "$@"
@@ -289,7 +288,7 @@ get_and_validate_images() {
 prepare_inline_container() {
     # If using a locally built stateless CI container, export ANCHORE_CI_IMAGE=<image_name>. 
     # This will override the image name from Dockerhub.
-    INLINE_SCAN_IMAGE="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:v0.4.1}"
+    INLINE_SCAN_IMAGE="${ANCHORE_CI_IMAGE:-docker.io/anchore/inline-scan:dev}" ### FIX VERSION BEFORE MERGING
 
     # Check if env var is overriding which inline-scan image to utilize.
     if [[ -z "$ANCHORE_CI_IMAGE" ]]; then
@@ -308,7 +307,6 @@ prepare_inline_container() {
         CREATE_CMD+=('-e TIMEOUT="$TIMEOUT"')
         RUN_CMD+=('-e TIMEOUT="$TIMEOUT"')
     fi
-
     if [[ "$v_flag" ]]; then
         printf '\n%s\n' "Creating volume mount -- ${VOLUME_PATH}:/anchore-engine"
         CREATE_CMD+=('-v "${VOLUME_PATH}:/anchore-engine:rw"')
@@ -323,7 +321,6 @@ start_vuln_scan() {
         CREATE_CMD+=('-f')
         RUN_CMD+=('-f')
     fi
-
     if [[ "$r_flag" ]]; then
         CREATE_CMD+=('-r')
         RUN_CMD+=('-r')
