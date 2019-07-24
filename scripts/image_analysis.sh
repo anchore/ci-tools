@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -exo pipefail
+set -eo pipefail
 
 display_usage() {
 cat << EOF
@@ -13,7 +13,7 @@ Anchore Engine Inline Analyzer --
 
   Images should be built & tagged locally.
 
-    Usage: ${0##*/} analyze [ OPTIONS ] <FULL_IMAGE_TAG>
+    Usage: ${0##*/} [ OPTIONS ] <FULL_IMAGE_TAG>
 
       -a <TEXT>  [optional] Add annotations (ex: -a 'key=value,key=value')
       -d <PATH>  [optional] Specify image digest (ex: -d 'sha256:<64 hex characters>')
@@ -92,7 +92,6 @@ main() {
     fi
 
     # analyze image with anchore-engine
-    ANALYSIS_FILE_NAME="/tmp/$(basename $IMAGE_FILE_NAME)"
     ANALYZE_CMD=('anchore-manager analyzers exec')
     ANALYZE_CMD+=('--tag "$IMAGE_TAG"') 
     if [[ ! -z "$IMAGE_DIGEST_SHA" ]]; then
@@ -115,7 +114,8 @@ main() {
         done
     fi
 
-    ANALYZE_CMD+=('"$IMAGE_FILE_NAME" "$ANALYSIS_FILE_NAME"')
+    ANALYZE_CMD+=('"$IMAGE_FILE_NAME" /anchore-engine/image-analysis-archive.tgz > /dev/null')
+    printf '\n%s' "Analyzing ${IMAGE_TAG}..."
     eval "${ANALYZE_CMD[*]}"
 }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -exo pipefail
+set -eo pipefail
 
 display_usage() {
 cat << EOF
@@ -135,7 +135,7 @@ get_and_validate_analyzer_options() {
         printf '\n\t%s\n\n' "ERROR - must provide an anchore-engine endpoint" >&2
         display_usage_analyzer >&2
         exit 1
-    elif ! curl --fail "${ANCHORE_URL%%/}/v1"; then
+    elif ! curl -s --fail "${ANCHORE_URL%%/}/v1" > /dev/null; then
         printf '\n\t%s\n\n' "ERROR - invalid anchore-engine endpoint provided - $ANCHORE_URL" >&2
         display_usage_analyzer >&2
         exit 1
@@ -144,7 +144,7 @@ get_and_validate_analyzer_options() {
         printf '\n\t%s\n\n' "ERROR - must provide anchore-engine username & password" >&2
         display_usage_analyzer >&2
         exit 1
-    elif ! curl --fail -u "${ANCHORE_USER}:${ANCHORE_PASS}" "${ANCHORE_URL%%/}/v1/status"; then
+    elif ! curl -s --fail -u "${ANCHORE_USER}:${ANCHORE_PASS}" "${ANCHORE_URL%%/}/v1/status" > /dev/null; then
         printf '\n\t%s\n\n' "ERROR - invalid anchore-engine username/password provided" >&2
         display_usage_analyzer >&2
         exit 1
@@ -366,56 +366,52 @@ start_vuln_scan() {
 }
 
 start_analysis() {
+    # Prepare commands for container creation & copying all files to container.
+    COPY_CMDS=()
     if [[ "$d_flag" ]]; then
         CREATE_CMD+=('-d "$IMAGE_DIGEST_SHA"')
-        RUN_CMD+=('-d "$IMAGE_DIGEST_SHA"')
     fi
     if [[ "$i_flag" ]]; then
         CREATE_CMD+=('-i "$ANCHORE_IMAGE_ID"')
-        RUN_CMD+=('-i "$ANCHORE_IMAGE_ID"')
     fi
     if [[ "$a_flag" ]]; then
         CREATE_CMD+=('-a "$ANCHORE_ANNOTATIONS"')
-        RUN_CMD+=('-a "$ANCHORE_ANNOTATIONS"')
     fi
     if [[ "$g_flag" ]]; then
-        printf '\n%s' "Preparing ${SCAN_IMAGES[*]} for analysis... "
-        RUN_CMD+=('-g "${SCAN_IMAGES[*]}"')
-
-        # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
-        if [[ ! "${SCAN_IMAGES[*]}" =~ [:]+ ]]; then
-            docker save "${SCAN_IMAGES[*]}:latest" | eval "${RUN_CMD[*]}"
-        else
-            docker save "${SCAN_IMAGES[*]}" | eval "${RUN_CMD[*]}"
-        fi
-    else
-        COPY_CMDS=()
-        # Prepare commands for container creation & copying all files to container.
-        if [[ "$m_flag" ]]; then
-            CREATE_CMD+=('-m "$MANIFEST_FILE"')
-            COPY_CMDS+=('docker cp "$MANIFEST_FILE" "${DOCKER_NAME}:/anchore-engine/$(basename $MANIFEST_FILE)";')
-        fi
-        if [[ "$f_flag" ]]; then
-            CREATE_CMD+=('-f "$DOCKERFILE"')
-            COPY_CMDS+=('docker cp "$DOCKERFILE" "${DOCKER_NAME}:/anchore-engine/$(basename $DOCKERFILE)";')
-        fi
-
-        CREATE_CMD+=("${SCAN_IMAGES[*]}")
-        docker_id=$(eval "${CREATE_CMD[*]}")
-        eval "${COPY_CMDS[*]}"
-        save_and_copy_images
-        echo
-        docker start -ia "$DOCKER_NAME"
+        CREATE_CMD+=('-g')
+    fi
+    if [[ "$m_flag" ]]; then
+        CREATE_CMD+=('-m "$MANIFEST_FILE"')
+        COPY_CMDS+=('docker cp "$MANIFEST_FILE" "${DOCKER_NAME}:/anchore-engine/$(basename $MANIFEST_FILE)";')
+    fi
+    if [[ "$f_flag" ]]; then
+        CREATE_CMD+=('-f "$DOCKERFILE"')
+        COPY_CMDS+=('docker cp "$DOCKERFILE" "${DOCKER_NAME}:/anchore-engine/$(basename $DOCKERFILE)";')
     fi
 
-    # # curl archive tarball to engine URL
-    # if [[ -f "$ANALYSIS_FILE_NAME" ]]; then
-    #     curl --fail -u "${ANCHORE_USER}:${ANCHORE_PASS}" -F "archive_file=@${ANALYSIS_FILE_NAME}" "${ANCHORE_URL%%/}/v1/import/images"
-    # else
-    #     printf '\n\t%s\n\n' "ERROR - analysis file invalid: $ANALYSIS_FILE_NAME. An error occured during analysis."  >&2
-    #     display_usage >&2
-    #     exit 1
-    # fi
+    CREATE_CMD+=("${SCAN_IMAGES[*]}")
+    docker_id=$(eval "${CREATE_CMD[*]}")
+    eval "${COPY_CMDS[*]}"
+    save_and_copy_images
+    echo
+    docker start -ia "$DOCKER_NAME"
+
+    ANALYSIS_FILE_NAME="${IMAGE_FILES[*]%.tar}-archive.tgz"
+    # copy image analysis archive from inline_scan containter to host & curl to remote anchore-engine endpoint
+    docker cp "${DOCKER_NAME}:/anchore-engine/image-analysis-archive.tgz" "/tmp/anchore/${ANALYSIS_FILE_NAME}"
+
+    if [[ -f "/tmp/anchore/${ANALYSIS_FILE_NAME}" ]]; then
+        printf '%s\n' " Analysis complete!"
+        printf '\n%s\n' "Sending analysis archive to ${ANCHORE_URL%%/}"
+        if ! curl -sS --fail -u "${ANCHORE_USER}:${ANCHORE_PASS}" -F "archive_file=@/tmp/anchore/${ANALYSIS_FILE_NAME}" "${ANCHORE_URL%%/}/v1/import/images"; then
+            printf '\n\t%s\n\n' "ERROR - unable to POST $ANALYSIS_FILE_NAME to ${ANCHORE_URL%%/}/v1/import/images" >&2
+            exit 1
+        fi
+    else
+        printf '\n\t%s\n\n' "ERROR - analysis file invalid: /tmp/anchore/${ANALYSIS_FILE_NAME}. An error occured during analysis."  >&2
+        display_usage_analyzer >&2
+        exit 1
+    fi
 }
 
 save_and_copy_images() {
@@ -423,7 +419,7 @@ save_and_copy_images() {
     # Save all image files to /tmp and copy to created container
     for image in "${SCAN_IMAGES[@]}"; do
         base_image_name=$(basename "$image")
-        printf '\n%s' "Preparing $image for scanning... "
+        printf '\n%s' "Preparing $image for analysis... "
         if [[ "$base_image_name" =~ [:]{1} ]]; then
             repo="${base_image_name%:*}"
             tag="${base_image_name#*:}"
@@ -431,7 +427,7 @@ save_and_copy_images() {
             repo="$base_image_name"
             tag="latest"
         fi
-        save_file_name="${repo}+${tag}.tar" 
+        save_file_name="${repo}+${tag}.tar"
         IMAGE_FILES+=("$save_file_name")
         
         if [[ "$v_flag" ]]; then
