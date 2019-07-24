@@ -49,11 +49,11 @@ Anchore Engine Inline Analyzer --
 
   Images should be built & tagged locally.
 
-    Usage: ${0##*/} analyze -r <REMOTE_URL> -u <USER> -P <PASSWORD> [ OPTIONS ] <FULL_IMAGE_TAG>
+    Usage: ${0##*/} analyze -r <REMOTE_URL> -u <USER> -p <PASSWORD> [ OPTIONS ] <FULL_IMAGE_TAG>
 
-      -r <TEXT>  [required] URL to remote Anchore Engine API endpoint (ex: -h 'https://anchore.example.com:8228/v1')
+      -r <TEXT>  [required] URL to remote Anchore Engine API endpoint (ex: -r 'https://anchore.example.com:8228/v1')
       -u <TEXT>  [required] Username for remote Anchore Engine auth (ex: -u 'admin')
-      -P <TEXT>  [required] Password for remote Anchore Engine auth (ex: -P 'foobar')
+      -p <TEXT>  [required] Password for remote Anchore Engine auth (ex: -p 'foobar')
 
       -a <TEXT>  [optional] Add annotations (ex: -a 'key=value,key=value')
       -d <PATH>  [optional] Specify image digest (ex: -d 'sha256:<64 hex characters>')
@@ -62,7 +62,7 @@ Anchore Engine Inline Analyzer --
       -m <PATH>  [optional] Path to Docker image manifest (ex: -m ./manifest.json)
       -t <TEXT>  [optional] Specify timeout for image analysis in seconds. Defaults to 300s. (ex: -t 500)
       -g  [optional] Generate an image digest from docker save tarball
-      -p  [optional] Pull docker image from registry
+      -P  [optional] Pull docker image from registry
 
 EOF
 }
@@ -96,18 +96,18 @@ main() {
 
 get_and_validate_analyzer_options() {
     #Parse options
-    while getopts ':r:u:P:a:d:f:i:m:t:pgh' option; do
+    while getopts ':r:u:p:a:d:f:i:m:t:Pgh' option; do
         case "${option}" in
             r  ) r_flag=true; ANCHORE_URL="${OPTARG%%/v1}";;
             u  ) u_flag=true; ANCHORE_USER="$OPTARG";;
-            P  ) P_flag=true; ANCHORE_PASS="$OPTARG";;
+            p  ) p_flag=true; ANCHORE_PASS="$OPTARG";;
             a  ) a_flag=true; ANCHORE_ANNOTATIONS="$OPTARG";;
             d  ) d_flag=true; IMAGE_DIGEST_SHA="$OPTARG";;
             f  ) f_flag=true; DOCKERFILE="$OPTARG";;
             i  ) i_flag=true; ANCHORE_IMAGE_ID="$OPTARG";;
             m  ) m_flag=true; MANIFEST_FILE="$OPTARG";;
             t  ) t_flag=true; TIMEOUT="$OPTARG";;
-            p  ) p_flag=true;;
+            P  ) P_flag=true;;
             g  ) g_flag=true;;
             h  ) display_usage_analyzer; exit;;
             \? ) printf "\n\t%s\n\n" "Invalid option: -${OPTARG}" >&2; display_usage_analyzer >&2; exit 1;;
@@ -139,7 +139,7 @@ get_and_validate_analyzer_options() {
         display_usage_analyzer >&2
         exit 1
     # validate user & password are provided & correct
-    elif [[ ! "$u_flag" ]] || [[ ! "$P_flag" ]]; then
+    elif [[ ! "$u_flag" ]] || [[ ! "$p_flag" ]]; then
         printf '\n\t%s\n\n' "ERROR - must provide anchore-engine username & password" >&2
         display_usage_analyzer >&2
         exit 1
@@ -257,7 +257,7 @@ get_and_validate_images() {
 
     # Make sure all images are available locally, add to FAILED_IMAGES array if not
     for i in "${IMAGE_NAMES[@]}"; do
-        if [[ "$p_flag" ]]; then
+        if ([[ "$p_flag" ]] && [[ -z "$ANCHORE_PASS" ]]) || [[ "$P_flag" ]]; then
             printf '\n%s\n' "Pulling image -- $i"
             docker pull $i || true
         fi
