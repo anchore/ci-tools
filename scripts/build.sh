@@ -268,7 +268,7 @@ test_inline_script() {
     docker pull docker:stable-git
     curl -s "$INLINE_URL" | bash -s -- -d ".circleci/Dockerfile" docker:stable-git
     # test script with policy bundle
-    curl -s "$INLINE_URL" | bash -s -- -p -t 500 -b ".circleci/.anchore/policy_bundle.json" "anchore/inline-scan:dev"
+    curl -s "$INLINE_URL" | bash -s -- -p -t 1500 -b ".circleci/.anchore/policy_bundle.json" "anchore/inline-scan:dev"
     # test script with policy bundle & dockerfile
     pushd "${WORKING_DIRECTORY}/.circleci/node_critical_pass/"
     docker build -t example.com:5000/ci-test_1/node_critical-pass:latest .
