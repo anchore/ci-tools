@@ -124,7 +124,7 @@ dev_test() {
 build_and_save_images() {
     local build_version="${1:-all}"
     setup_build_environment
-    # Loop through build_versions.txt and build images for every specified version
+    # build images for every specified version
     if [[ "$build_version" == 'all' ]]; then
         for version in ${BUILD_VERSIONS[@]}; do
             echo "Building ${IMAGE_REPO}:dev-${version}"
@@ -213,11 +213,13 @@ build_image() {
     DOCKER_RUN_IDS+=("${db_preload_id:0:6}")
     docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
     docker tag "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-${anchore_version}"
-    local docker_name="${RANDOM:-temp}-db-preload"
-    docker run -it --name "$docker_name" "${IMAGE_REPO}:dev-${anchore_version}" debug /bin/bash -c "anchore-cli system wait --feedsready 'vulnerabilities,nvd' && anchore-cli system status && anchore-cli system feeds list"
-    local docker_id=$(docker inspect $docker_name | jq '.[].Id')
-    docker kill "$docker_id" && docker rm "$docker_id"
-    DOCKER_RUN_IDS+=("${docker_id:0:6}")
+    if [[ ! "$1" == 'dev' ]]; then
+        local docker_name="${RANDOM:-temp}-db-preload"
+        docker run -it --name "$docker_name" "${IMAGE_REPO}:dev-${anchore_version}" debug /bin/bash -c "anchore-cli system wait --feedsready 'vulnerabilities,nvd' && anchore-cli system status && anchore-cli system feeds list"
+        local docker_id=$(docker inspect $docker_name | jq '.[].Id')
+        docker kill "$docker_id" && docker rm "$docker_id"
+        DOCKER_RUN_IDS+=("${docker_id:0:6}")
+    fi
     rm -f "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
 }
 
