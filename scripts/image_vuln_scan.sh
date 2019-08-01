@@ -2,6 +2,19 @@
 
 set -eo pipefail
 
+########################
+### GLOBAL VARIABLES ###
+########################
+
+export TIMEOUT=${TIMEOUT:=300}
+SCAN_FILES=()
+FINISHED_IMAGES=()
+FILE_NAME=""
+IMAGE_NAME=""
+POLICY_BUNDLE="/anchore-engine/policy_bundle.json"
+DOCKERFILE="/anchore-engine/Dockerfile"
+
+
 display_usage() {
 cat << EOF
 
@@ -29,24 +42,20 @@ main() {
     trap 'error' SIGINT
     get_and_validate_options "$@"
 
-    SCAN_FILES=()
-    FINISHED_IMAGES=()
-
-    printf '%s\n\n' "Searching for Docker archive files in /anchore-engine."
-    if [[ "$FILE_NAME" ]]; then
+    if [[ "${FILE_NAME}" ]]; then
         if [[ $(skopeo inspect "docker-archive:${FILE_NAME}") ]]; then 
             SCAN_FILES+=("$FILE_NAME")
-            printf '\t%s\n' "Found Docker image archive:  $FILE_NAME"
         else 
-            printf '\n\t%s\n\n' "ERROR - Invalid Docker image archive:  $FILE_NAME" >&2
+            printf '\n\t%s\n\n' "ERROR - Invalid Docker image archive:  ${FILE_NAME}" >&2
             display_usage >&2
             exit 1
         fi
     else
+        printf '%s\n\n' "Searching for Docker archive files in /anchore-engine."
         for i in $(find /anchore-engine -type f); do
             if [[ $(skopeo inspect "docker-archive:${i}") ]] && [[ ! "${SCAN_FILES[@]}" =~ "$i" ]]; then 
                 SCAN_FILES+=("$i")
-                printf '\t%s\n' "Found docker archive:  $i"
+                printf '\t%s\n' "Found docker image archive:  $i"
             else 
                 printf '\t%s\n' "Ignoring invalid docker archive:  $i" >&2
             fi
@@ -56,7 +65,7 @@ main() {
 
     if [[ "${#SCAN_FILES[@]}" -gt 0 ]]; then
         for file in "${SCAN_FILES[@]}"; do
-            start_scan "$file"
+            prepare_image "${file}"
         done
     else
         printf '\n\t%s\n\n' "ERROR - No valid docker archives provided." >&2
@@ -64,27 +73,27 @@ main() {
         exit 1
     fi
 
-    if [[ "$b_flag" ]]; then
-        (anchore-cli --json policy add "$POLICY_BUNDLE" | jq '.policyId' | xargs anchore-cli policy activate) || \
-            printf "\n%s\n" "Unable to activate policy bundle - $POLICY_BUNDLE -- using default policy bundle." >&2
+    if [[ "${b_flag}" ]]; then
+        (anchore-cli --json policy add "${POLICY_BUNDLE}" | jq '.policyId' | xargs anchore-cli policy activate) || \
+            printf "\n%s\n" "Unable to activate policy bundle - ${POLICY_BUNDLE} -- using default policy bundle." >&2
     fi
 
     if [[ "${#FINISHED_IMAGES[@]}" -ge 1 ]]; then
-        if [[ "$r_flag" ]]; then
+        if [[ "${r_flag}" ]]; then
             for image in "${FINISHED_IMAGES[@]}"; do
-                anchore_ci_tools.py -r --image "$image"
+                anchore_ci_tools.py -r --image "${image}"
             done
         fi
         echo
         for image in "${FINISHED_IMAGES[@]}"; do
-            printf '\n\t%s\n' "Policy Evaluation - ${image##*/}"
+            printf '\t%s\n' "Policy Evaluation - ${image##*/}"
             printf '%s\n\n' "-----------------------------------------------------------"
-            (set +o pipefail; anchore-cli evaluate check "$image" --detail | tee /dev/null; set -o pipefail)
+            (set +o pipefail; anchore-cli evaluate check "${image}" --detail | tee /dev/null; set -o pipefail)
         done
 
-        if [[ "$f_flag" ]]; then
+        if [[ "${f_flag}" ]]; then
             for image in "${FINISHED_IMAGES[@]}"; do
-                anchore-cli evaluate check "$image"
+                anchore-cli evaluate check "${image}"
             done
         fi
     fi
@@ -96,7 +105,7 @@ get_and_validate_options() {
         case "${option}" in
             d  ) d_flag=true; DOCKERFILE="/anchore-engine/$(basename $OPTARG)";;
             b  ) b_flag=true; POLICY_BUNDLE="/anchore-engine/$(basename $OPTARG)";;
-            i  ) i_flag=true; IMAGE_NAME="$OPTARG";;
+            i  ) i_flag=true; IMAGE_NAME="${OPTARG}";;
             f  ) f_flag=true;;
             r  ) r_flag=true;;
             h  ) display_usage; exit;;
@@ -107,91 +116,92 @@ get_and_validate_options() {
 
     shift "$((OPTIND - 1))"
 
-    export TIMEOUT=${TIMEOUT:=300}
-
     # Test options to ensure they're all valid. Error & display usage if not.
-    if [[ "$d_flag" ]] && [[ ! "$i_flag" ]]; then
+    if [[ "${d_flag}" ]] && [[ ! "${i_flag}" ]]; then
         printf '\n\t%s\n\n' "ERROR - must specify an image when passing a Dockerfile." >&2
         display_usage >&2
         exit 1
-    elif [[ "$d_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
-        printf '\n\t%s\n\n' "ERROR - Can not find dockerfile at: $DOCKERFILE" >&2
+    elif [[ "${d_flag}" ]] && [[ ! -f "${DOCKERFILE}" ]]; then
+        printf '\n\t%s\n\n' "ERROR - Can not find dockerfile at: ${DOCKERFILE}" >&2
         display_usage >&2
         exit 1
-    elif [[ "$b_flag" ]] && [[ ! -f "$POLICY_BUNDLE" ]]; then
-        printf '\n\t%s\n\n' "ERROR - Can not find policy bundle file at: $POLICY_BUNDLE" >&2
+    elif [[ "${b_flag}" ]] && [[ ! -f "${POLICY_BUNDLE}" ]]; then
+        printf '\n\t%s\n\n' "ERROR - Can not find policy bundle file at: ${POLICY_BUNDLE}" >&2
         display_usage >&2
         exit 1
     fi
 
-    if [[ "$i_flag" ]]; then
-        if [[ "$IMAGE_NAME" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
-            FILE_NAME="/anchore-engine/${BASH_REMATCH[2]}+${BASH_REMATCH[3]:-latest}.tar"
-            if [[ ! -f "$FILE_NAME" ]]; then
-                cat <&0 > "$FILE_NAME"
-                printf '%s\n' "Successfully prepared image archive -- $FILE_NAME"
+    if [[ "${i_flag}" ]]; then
+        if [[ -f "/anchore-engine/${IMAGE_NAME##*/}" ]] && [[ "${IMAGE_NAME}" =~ [.]tar? ]]; then
+            FILE_NAME="/anchore-engine/${IMAGE_NAME##*/}"
+        elif [[ "${IMAGE_NAME}" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
+            FILE_NAME="/anchore-engine/${IMAGE_NAME##*/}.tar"
+            if [[ ! -f "${FILE_NAME}" ]]; then
+                cat <&0 > "${FILE_NAME}"
             fi
-        elif [[ -f "/anchore-engine/$(basename ${IMAGE_NAME})" ]]; then
-            FILE_NAME="/anchore-engine/$(basename ${IMAGE_NAME})"
+            # Transform file name for skopeo functionality, replace : with _
+            local new_file_name="${FILE_NAME//:/_}"
+            mv "${FILE_NAME}" "${new_file_name}"
+            FILE_NAME="${new_file_name}"
         else
-            printf '\n\t%s\n\n' "ERROR - Could not find image file $IMAGE_NAME" >&2
+            printf '\n\t%s\n\n' "ERROR - Could not find image file ${IMAGE_NAME}" >&2
             display_usage >&2
             exit 1
         fi
     fi
 }
 
-start_scan() {
+prepare_image() {
     local file="$1"
     local image_repo=""
     local image_tag=""
     local anchore_image_name=""
 
     if [[ -z "$IMAGE_NAME" ]]; then
-        if [[ "$file" =~ (.+)[+]([^+].+)[.]tar$ ]]; then
-            image_repo=$(basename "${BASH_REMATCH[1]}")
+        if [[ "${file}" =~ ([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*)[.]tar$ ]]; then
+            image_repo="${BASH_REMATCH[1]##*/}"
             image_tag="${BASH_REMATCH[2]}"
         else
             image_repo=$(basename "${file%%.*}")
             image_tag="latest"
         fi
-    elif [[ "$IMAGE_NAME" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
+    elif [[ "${IMAGE_NAME}" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
         image_repo="${BASH_REMATCH[2]}"
         image_tag="${BASH_REMATCH[3]:-latest}"
     else
-        printf '\n\t%s\n\n' "ERROR - Could not parse image file name $IMAGE_NAME" >&2
+        printf '\n\t%s\n\n' "ERROR - Could not parse image file name ${IMAGE_NAME}" >&2
         display_usage >&2
         exit 1
     fi
 
-    anchore_image_name="${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"
-    
-    printf '%s\n\n' "Image archive loaded into Anchore Engine using tag -- ${anchore_image_name#*/}"
-    anchore_analysis "$file" "$anchore_image_name"
-}
-
-anchore_analysis() {
-    declare file="$1"
-    declare anchore_image_name="$2"
-
+    anchore_image_name="${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"    
+    printf '%s\n\n' "Preparing ${IMAGE_NAME} for analysis"
     # pass to background process & wait, required to handle keyboard interrupt when running container non-interactively.
     skopeo copy --dest-tls-verify=false "docker-archive:${file}" "docker://${anchore_image_name}" &
-    declare wait_proc="$!"
-    wait $wait_proc
+    wait_proc="$!"
+    wait "${wait_proc}"
+    printf '\n%s\n' "Image archive loaded into Anchore Engine using tag -- ${anchore_image_name#*/}"
 
-    echo
-    if [[ "$d_flag" ]] && [[ -f "$DOCKERFILE" ]]; then
-        anchore-cli image add "$anchore_image_name" --dockerfile "$DOCKERFILE" > /dev/null
+    start_scan "${file}" "${anchore_image_name}"
+}
+
+start_scan() {
+    local file="$1"
+    local anchore_image_name="$2"
+    local wait_proc=""
+
+    if [[ "${d_flag}" ]] && [[ -f "${DOCKERFILE}" ]]; then
+        anchore-cli image add "${anchore_image_name}" --dockerfile "${DOCKERFILE}" > /dev/null
     else
-        anchore-cli image add "$anchore_image_name" > /dev/null
+        anchore-cli image add "${anchore_image_name}" > /dev/null
     fi
 
     # pass to background process & wait, required to handle keyboard interrupt when running container non-interactively.
-    anchore_ci_tools.py --wait --timeout "$TIMEOUT" --image "$anchore_image_name" &
-    declare wait_proc="$!"
-    wait "$wait_proc"
+    anchore_ci_tools.py --wait --timeout "${TIMEOUT}" --image "${anchore_image_name}" &
+    wait_proc="$!"
+    wait "${wait_proc}"
 
-    FINISHED_IMAGES+=("$anchore_image_name")
+    FINISHED_IMAGES+=("${anchore_image_name}")
 }
 
 error() {

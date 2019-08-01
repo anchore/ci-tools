@@ -2,6 +2,20 @@
 
 set -eo pipefail
 
+########################
+### GLOBAL VARIABLES ###
+########################
+
+export TIMEOUT=${TIMEOUT:=300}
+ANCHORE_ANNOTATIONS=""
+IMAGE_DIGEST_SHA=""
+ANCHORE_IMAGE_ID=""
+IMAGE_TAG=""
+DOCKERFILE="/anchore-engine/Dockerfile"
+MANIFEST_FILE="/anchore-engine/manifest.json"
+ANALYZE_CMD=()
+
+
 display_usage() {
 cat << EOF
 
@@ -26,16 +40,66 @@ Anchore Engine Inline Analyzer --
 EOF
 }
 
+main() {
+    trap 'error' SIGINT
+    get_and_validate_options "$@"
+
+    local base_image_name=${IMAGE_TAG##*/}
+    local image_file_path="/anchore-engine/${base_image_name}.tar"
+
+    if [[ ! -f "${image_file_path}" ]]; then
+        printf '\n\t%s\n\n' "ERROR - Could not find file: ${image_file_path}" >&2
+        display_usage >&2
+        exit 1
+    fi
+
+    if [[ "${base_image_name}" =~ [:]? ]]; then
+        local new_file_path="/anchore-engine/${base_image_name//:/_}.tar"
+        mv "${image_file_path}" "${new_file_path}"
+        image_file_path="${new_file_path}"
+    fi
+
+    # analyze image with anchore-engine
+    ANALYZE_CMD=('anchore-manager analyzers exec')
+    ANALYZE_CMD+=('--tag "${IMAGE_TAG}"')
+    if [[ "${g_flag}" ]]; then
+        IMAGE_DIGEST_SHA=$(skopeo inspect --raw "docker-archive:///${image_file_path}" | jq -r .config.digest)
+    fi
+    if [[ "${d_flag}" ]] || [[ "${g_flag}" ]]; then
+        ANALYZE_CMD+=('--digest "${IMAGE_DIGEST_SHA}"') 
+    fi
+    if [[ "${m_flag}" ]]; then
+        ANALYZE_CMD+=('--manifest "${MANIFEST_FILE}"')
+    fi
+    if [[ "${f_flag}" ]]; then
+        ANALYZE_CMD+=('--dockerfile "${DOCKERFILE}"')
+    fi
+    if [[ "${i_flag}" ]]; then
+        ANALYZE_CMD+=('--image-id "${ANCHORE_IMAGE_ID}"')
+    fi
+    if [[ "${a_flag}" ]]; then
+        # transform all commas to spaces & cast to an array
+        local annotation_array=(${ANCHORE_ANNOTATIONS//,/ })
+        for i in "${annotation_array[@]}"; do
+            ANALYZE_CMD+=("--annotation $i")
+        done
+    fi
+
+    ANALYZE_CMD+=('"$image_file_path" /anchore-engine/image-analysis-archive.tgz > /dev/null')
+    printf '\n%s' "Analyzing ${IMAGE_TAG}..."
+    eval "${ANALYZE_CMD[*]}"
+}
+
 get_and_validate_options() {
     # parse options
     while getopts ':a:d:f:i:m:t:gh' option; do
         case "${option}" in
-            a  ) a_flag=true; ANCHORE_ANNOTATIONS="$OPTARG";;
-            d  ) d_flag=true; IMAGE_DIGEST_SHA="$OPTARG";;
-            f  ) f_flag=true; DOCKERFILE="/anchore-engine/$(basename $OPTARG)";;
-            i  ) i_flag=true; ANCHORE_IMAGE_ID="$OPTARG";;
-            m  ) m_flag=true; MANIFEST_FILE="/anchore-engine/$(basename $OPTARG)";;
-            t  ) t_flag=true; TIMEOUT="$OPTARG";;
+            a  ) a_flag=true; ANCHORE_ANNOTATIONS="${OPTARG}";;
+            d  ) d_flag=true; IMAGE_DIGEST_SHA="${OPTARG}";;
+            f  ) f_flag=true; DOCKERFILE="/anchore-engine/$(basename ${OPTARG})";;
+            i  ) i_flag=true; ANCHORE_IMAGE_ID="${OPTARG}";;
+            m  ) m_flag=true; MANIFEST_FILE="/anchore-engine/$(basename ${OPTARG})";;
+            t  ) t_flag=true; TIMEOUT="${OPTARG}";;
             g  ) g_flag=true;;
             h  ) display_usage; exit;;
             \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
@@ -43,8 +107,6 @@ get_and_validate_options() {
         esac
     done
     shift "$((OPTIND - 1))"
-
-    export TIMEOUT=${TIMEOUT:=300}
 
     # Ensure only a single image tag is passed after options
     if [[ "${#@}" -gt 1 ]]; then
@@ -55,68 +117,29 @@ get_and_validate_options() {
         IMAGE_TAG="$1"
     fi
 
-    if [[ "$f_flag" ]] && [[ ! -f "$DOCKERFILE" ]]; then
-        printf '\n\t%s\n\n' "ERROR - invalid path to dockerfile provided - $DOCKERFILE" >&2
+    if [[ "${f_flag}" ]] && [[ ! -f "${DOCKERFILE}" ]]; then
+        printf '\n\t%s\n\n' "ERROR - invalid path to dockerfile provided - ${DOCKERFILE}" >&2
         display_usage >&2
         exit 1
-    elif [[ "$m_flag" ]] && [[ ! -f "$MANIFEST_FILE" ]]; then
-        printf '\n\t%s\n\n' "ERROR - invalid path to image manifest file provided - $MANIFEST_FILE" >&2
+    elif [[ "${m_flag}" ]] && [[ ! -f "${MANIFEST_FILE}" ]]; then
+        printf '\n\t%s\n\n' "ERROR - invalid path to image manifest file provided - ${MANIFEST_FILE}" >&2
         display_usage >&2
         exit 1
-    elif [[ "$p_flag" ]] && ([[ "$m_flag" ]] || [[ "$d_flag" ]]); then
-        printf '\n\t%s\n\n' "ERROR - cannot specify manifest file or digest when pulling image from registry" >&2
+    elif [[ "${g_flag}" ]] && ([[ "${m_flag}" ]] || [[ "${d_flag}" ]]); then
+        printf '\n\t%s\n\n' "ERROR - cannot specify manifest file or digest when using the -g option" >&2
         display_usage >&2
         exit 1
     fi
 }
 
-main() {
-    get_and_validate_options "$@"
-
-    if [[ "$IMAGE_TAG" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
-        IMAGE_FILE_NAME="/anchore-engine/${BASH_REMATCH[2]}+${BASH_REMATCH[3]:-latest}.tar"
-        if [[ ! -f "$IMAGE_FILE_NAME" ]]; then
-            cat <&0 > "$IMAGE_FILE_NAME"
-            printf '%s\n' "Successfully prepared image archive -- $IMAGE_FILE_NAME"
-        fi
-    elif [[ -f "/anchore-engine/$(basename ${IMAGE_TAG})" ]]; then
-        IMAGE_FILE_NAME="/anchore-engine/$(basename ${IMAGE_TAG})"
-    else
-        printf '\n\t%s\n\n' "ERROR - Could not find file for $IMAGE_TAG" >&2
-        display_usage >&2
-        exit 1
-    fi
-
-    if [[ "$g_flag" ]]; then
-        IMAGE_DIGEST_SHA=$(skopeo inspect --raw "docker-archive:///${IMAGE_FILE_NAME}" | jq -r .config.digest)
-    fi
-
-    # analyze image with anchore-engine
-    ANALYZE_CMD=('anchore-manager analyzers exec')
-    ANALYZE_CMD+=('--tag "$IMAGE_TAG"') 
-    if [[ ! -z "$IMAGE_DIGEST_SHA" ]]; then
-        ANALYZE_CMD+=('--digest "$IMAGE_DIGEST_SHA"') 
-    fi
-    if [[ ! -z "$MANIFEST_FILE" ]]; then
-        ANALYZE_CMD+=('--manifest "$MANIFEST_FILE"')
-    fi
-    if [[ "$f_flag" ]]; then
-        ANALYZE_CMD+=('--dockerfile "$DOCKERFILE"')
-    fi
-    if [[ "$i_flag" ]]; then
-        ANALYZE_CMD+=('--image-id "$ANCHORE_IMAGE_ID"')
-    fi
-    if [[ "$a_flag" ]]; then
-        # transform all commas to spaces & cast to an array
-        local annotationArray=(${ANCHORE_ANNOTATIONS//,/ })
-        for i in "${annotationArray[@]}"; do
-            ANALYZE_CMD+=("--annotation $i")
-        done
-    fi
-
-    ANALYZE_CMD+=('"$IMAGE_FILE_NAME" /anchore-engine/image-analysis-archive.tgz > /dev/null')
-    printf '\n%s' "Analyzing ${IMAGE_TAG}..."
-    eval "${ANALYZE_CMD[*]}"
+error() {
+    set +e
+    printf '\n\n\t%s\n\n' "ERROR - $0 received SIGTERM or SIGINT" >&2
+    # kill python process in wait loop
+    (pkill -f python3 &> /dev/null)
+    # kill skopeo process in wait loop
+    (pkill -f skopeo &> /dev/null)
+    exit 130
 }
 
 main "$@"
