@@ -2,18 +2,23 @@
 
 set -eo pipefail
 
+if [[ "${VERBOSE}" ]]; then
+    set -x
+fi
+
 ########################
 ### GLOBAL VARIABLES ###
 ########################
 
 export TIMEOUT=${TIMEOUT:=300}
+# defaults for variables set by script options
+ANALYZE_CMD=()
 ANCHORE_ANNOTATIONS=""
 IMAGE_DIGEST_SHA=""
 ANCHORE_IMAGE_ID=""
 IMAGE_TAG=""
 DOCKERFILE="/anchore-engine/Dockerfile"
 MANIFEST_FILE="/anchore-engine/manifest.json"
-ANALYZE_CMD=()
 
 
 display_usage() {
@@ -53,7 +58,8 @@ main() {
         exit 1
     fi
 
-    if [[ "${base_image_name}" =~ [:]? ]]; then
+    # if filename has a : in it, replace it with _ to avoid skopeo errors
+    if [[ "${base_image_name}" =~ [:] ]]; then
         local new_file_path="/anchore-engine/${base_image_name//:/_}.tar"
         mv "${image_file_path}" "${new_file_path}"
         image_file_path="${new_file_path}"

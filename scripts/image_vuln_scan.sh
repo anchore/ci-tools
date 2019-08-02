@@ -2,6 +2,10 @@
 
 set -eo pipefail
 
+if [[ "${VERBOSE}" ]]; then
+    set -x
+fi
+
 ########################
 ### GLOBAL VARIABLES ###
 ########################
@@ -9,6 +13,7 @@ set -eo pipefail
 export TIMEOUT=${TIMEOUT:=300}
 SCAN_FILES=()
 FINISHED_IMAGES=()
+# defaults for variables set by script options
 FILE_NAME=""
 IMAGE_NAME=""
 POLICY_BUNDLE="/anchore-engine/policy_bundle.json"
@@ -53,11 +58,17 @@ main() {
     else
         printf '%s\n\n' "Searching for Docker archive files in /anchore-engine."
         for i in $(find /anchore-engine -type f); do
-            if [[ $(skopeo inspect "docker-archive:${i}") ]] && [[ ! "${SCAN_FILES[@]}" =~ "$i" ]]; then 
-                SCAN_FILES+=("$i")
-                printf '\t%s\n' "Found docker image archive:  $i"
+            local file_name="$i"
+            if [[ "${file_name}" =~ [:] ]]; then
+                local new_file_name="${file_name//:/_}"
+                mv "${file_name}" "${new_file_name}"
+                file_name="${new_file_name}"
+            fi
+            if [[ $(skopeo inspect "docker-archive:${file_name}") ]] && [[ ! "${SCAN_FILES[@]}" =~ "${file_name}" ]]; then 
+                SCAN_FILES+=("$file_name")
+                printf '\t%s\n' "Found docker image archive:  ${file_name}"
             else 
-                printf '\t%s\n' "Ignoring invalid docker archive:  $i" >&2
+                printf '\t%s\n' "Ignoring invalid docker archive:  ${file_name}" >&2
             fi
         done
     fi
@@ -134,15 +145,17 @@ get_and_validate_options() {
     if [[ "${i_flag}" ]]; then
         if [[ -f "/anchore-engine/${IMAGE_NAME##*/}" ]] && [[ "${IMAGE_NAME}" =~ [.]tar? ]]; then
             FILE_NAME="/anchore-engine/${IMAGE_NAME##*/}"
-        elif [[ "${IMAGE_NAME}" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
+        elif [[ "${IMAGE_NAME}" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]([a-zA-Z0-9_.-]*) ]]; then
             FILE_NAME="/anchore-engine/${IMAGE_NAME##*/}.tar"
             if [[ ! -f "${FILE_NAME}" ]]; then
                 cat <&0 > "${FILE_NAME}"
             fi
             # Transform file name for skopeo functionality, replace : with _
-            local new_file_name="${FILE_NAME//:/_}"
-            mv "${FILE_NAME}" "${new_file_name}"
-            FILE_NAME="${new_file_name}"
+            if [[ "${FILE_NAME}" =~ [:] ]]; then
+                local new_file_name="${FILE_NAME//:/_}"
+                mv "${FILE_NAME}" "${new_file_name}"
+                FILE_NAME="${new_file_name}"
+            fi
         else
             printf '\n\t%s\n\n' "ERROR - Could not find image file ${IMAGE_NAME}" >&2
             display_usage >&2
@@ -153,28 +166,28 @@ get_and_validate_options() {
 
 prepare_image() {
     local file="$1"
-    local image_repo=""
-    local image_tag=""
-    local anchore_image_name=""
 
-    if [[ -z "$IMAGE_NAME" ]]; then
-        if [[ "${file}" =~ ([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*)[.]tar$ ]]; then
-            image_repo="${BASH_REMATCH[1]##*/}"
-            image_tag="${BASH_REMATCH[2]}"
+    if [[ -z "${IMAGE_NAME##*/}" ]]; then
+        if [[ "${file}" =~ ([a-zA-Z0-9_.-]+)([:]|[_])([a-zA-Z0-9_.-]*)[.]tar$ ]]; then
+            local image_repo="${BASH_REMATCH[1]}"
+            local image_tag="${BASH_REMATCH[3]}"
         else
-            image_repo=$(basename "${file%%.*}")
-            image_tag="latest"
+            local image_repo=$(basename "${file%%.*}")
+            local image_tag="latest"
         fi
-    elif [[ "${IMAGE_NAME}" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]?([a-zA-Z0-9_.-]*) ]]; then
-        image_repo="${BASH_REMATCH[2]}"
-        image_tag="${BASH_REMATCH[3]:-latest}"
+    elif [[ "${IMAGE_NAME##*/}" =~ (.*/|)([a-zA-Z0-9_.-]+)[:]([a-zA-Z0-9_.-]*) ]]; then
+        local image_repo="${BASH_REMATCH[2]}"
+        local image_tag="${BASH_REMATCH[3]:-latest}"
+    elif [[ "${IMAGE_NAME##*/}" =~ ([a-zA-Z0-9_.-]*) ]]; then
+        local image_repo="${BASH_REMATCH[1]}"
+        local image_tag='latest'
     else
         printf '\n\t%s\n\n' "ERROR - Could not parse image file name ${IMAGE_NAME}" >&2
         display_usage >&2
         exit 1
     fi
 
-    anchore_image_name="${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"    
+    local anchore_image_name="${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"    
     printf '%s\n\n' "Preparing ${IMAGE_NAME} for analysis"
     # pass to background process & wait, required to handle keyboard interrupt when running container non-interactively.
     skopeo copy --dest-tls-verify=false "docker-archive:${file}" "docker://${anchore_image_name}" &

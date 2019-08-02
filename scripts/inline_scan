@@ -68,6 +68,7 @@ Anchore Engine Inline Scan --
       -f  [optional] Exit script upon failed Anchore policy evaluation
       -p  [optional] Pull remote docker images
       -r  [optional] Generate analysis reports in your current working directory
+      -V  [optional] Increase verbosity
 
 EOF
 }
@@ -97,6 +98,7 @@ Anchore Engine Inline Analyzer --
       -t <TEXT>  [optional] Specify timeout for image analysis in seconds. Defaults to 300s. (ex: -t 500)
       -g  [optional] Generate an image digest from docker save tarball
       -P  [optional] Pull docker image from registry
+      -V  [optional] Increase verbosity
 
 EOF
 }
@@ -122,7 +124,9 @@ main() {
     else
         VULN_SCAN=true
         get_and_validate_scanner_options "$@"
-        get_and_validate_images "${VALIDATED_OPTIONS}"
+        if [[ ! "${v_flag}" ]]; then
+            get_and_validate_images "${VALIDATED_OPTIONS}"
+        fi
         prepare_inline_container
         CREATE_CMD+=('scan')
         RUN_CMD+=('scan')
@@ -132,7 +136,7 @@ main() {
 
 get_and_validate_analyzer_options() {
     #Parse options
-    while getopts ':r:u:p:a:d:f:i:m:t:Pgh' option; do
+    while getopts ':r:u:p:a:d:f:i:m:t:PgVh' option; do
         case "${option}" in
             r  ) r_flag=true; ANCHORE_URL="${OPTARG%%/v1}";;
             u  ) u_flag=true; ANCHORE_USER="${OPTARG}";;
@@ -145,6 +149,7 @@ get_and_validate_analyzer_options() {
             t  ) t_flag=true; TIMEOUT="${OPTARG}";;
             P  ) P_flag=true;;
             g  ) g_flag=true;;
+            V  ) V_flag=true;;
             h  ) display_usage_analyzer; exit;;
             \? ) printf "\n\t%s\n\n" "Invalid option: -${OPTARG}" >&2; display_usage_analyzer >&2; exit 1;;
             :  ) printf "\n\t%s\n\n%s\n\n" "Option -${OPTARG} requires an argument." >&2; display_usage_analyzer >&2; exit 1;;
@@ -216,12 +221,16 @@ get_and_validate_analyzer_options() {
         exit 1
     fi
 
+    if [[ "$V_flag" ]]; then
+        set -x
+    fi
+
     VALIDATED_OPTIONS="$@"
 }
 
 get_and_validate_scanner_options() {
     # Parse options
-    while getopts ':d:b:v:t:fhrp' option; do
+    while getopts ':d:b:v:t:fhrVp' option; do
         case "${option}" in
             d  ) d_flag=true; DOCKERFILE="${OPTARG}";;
             f  ) f_flag=true;;
@@ -230,6 +239,7 @@ get_and_validate_scanner_options() {
             p  ) p_flag=true;;
             t  ) t_flag=true; TIMEOUT="${OPTARG}";;
             v  ) v_flag=true; VOLUME_PATH="$(cd "$(dirname "${OPTARG}")"; pwd -P)/$(basename "${OPTARG}")";; # Get absolute path of file
+            V  ) V_flag=true;;
             h  ) display_usage; exit;;
             \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage_scanner >&2; exit 1;;
             :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument" >&2; display_usage_scanner >&2; exit 1;;
@@ -274,6 +284,10 @@ get_and_validate_scanner_options() {
         printf '\n\t%s\n\n' "ERROR - timeout must be set to a valid integer" >&2
         display_usage_scanner >&2
         exit 1
+    fi
+
+    if [[ "$V_flag" ]]; then
+        set -x
     fi
 
     VALIDATED_OPTIONS="$@"
@@ -333,6 +347,10 @@ prepare_inline_container() {
     if [[ "${t_flag}" ]]; then
         CREATE_CMD+=('-e TIMEOUT="${TIMEOUT}"')
         RUN_CMD+=('-e TIMEOUT="${TIMEOUT}"')
+    fi
+    if [[ "${V_flag}" ]]; then
+        CREATE_CMD+=('-e VERBOSE=true')
+        RUN_CMD+=('-e VERBOSE=true')
     fi
     if [[ "${v_flag}" ]]; then
         printf '\n%s\n' "Creating volume mount -- ${VOLUME_PATH}:/anchore-engine"

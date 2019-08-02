@@ -231,8 +231,7 @@ pull_test_images() {
     mkdir -p "${WORKSPACE}/images"
     for img in "${img_array[@]}"; do
         docker pull "$img"
-        image_file=$(echo "${img##*/}" | sed 's/:/+/g' )
-        docker save "$img" -o "${WORKSPACE}/images/"${image_file}".tar"
+        docker save "$img" -o "${WORKSPACE}/images/"${img##*/}".tar"
     done
 }
 
@@ -252,23 +251,23 @@ test_bulk_image_volume() {
     else
         pull_test_images java:latest nginx:latest ubuntu:latest
     fi
-    cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -v "${WORKSPACE}/images" -t 500
+    cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -V -v "${WORKSPACE}/images" -t 500
 }
 
 test_inline_image() {
     local anchore_version="$1"
     export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${anchore_version}"
-    cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -p alpine:latest
+    cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -V -p  alpine:latest
 }
 
 test_inline_script() {
     local INLINE_URL="$1"
-    curl -s "$INLINE_URL" | bash -s -- -p centos:latest
+    curl -s "$INLINE_URL" | bash -s -- -p  centos:latest
     # test script with dockerfile
     docker pull docker:stable-git
     curl -s "$INLINE_URL" | bash -s -- -d ".circleci/Dockerfile" docker:stable-git
     # test script with policy bundle
-    curl -s "$INLINE_URL" | bash -s -- -p -t 1500 -b ".circleci/.anchore/policy_bundle.json" "anchore/anchore-engine:latest"
+    curl -s "$INLINE_URL" | bash -s -- -p  -b ".circleci/.anchore/policy_bundle.json" "anchore/anchore-engine:latest"
     # test script with policy bundle & dockerfile
     pushd "${WORKING_DIRECTORY}/.circleci/node_critical_pass/"
     docker build -t example.com:5000/ci-test_1/node_critical-pass:latest .
