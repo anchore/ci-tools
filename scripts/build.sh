@@ -200,8 +200,13 @@ load_image_and_push_dockerhub() {
 ###########################################################
 
 build_image() {
-    local anchore_version="$1"
-    local db_version="$anchore_version"
+    if [[ "$1" == 'dev' ]]; then
+        local anchore_version="latest"
+        local db_version='latest'
+    else
+        local anchore_version="$1"
+        local db_version="$anchore_version"
+    fi
     docker pull "anchore/engine-db-preload:${db_version}"
 
     echo "Copying anchore-bootstrap.sql.gz from anchore/engine-db-preload:${db_version} image..."
