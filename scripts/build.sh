@@ -170,7 +170,7 @@ test_built_images() {
         done
     else
         load_image "$build_version"
-        export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${build_version}"
+        export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev"
         test_bulk_image_volume "$build_version"
         if [[ "$build_version" == 'latest' ]]; then
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${GIT_BRANCH}/scripts/inline_scan"
@@ -332,7 +332,7 @@ push_dockerhub() {
 save_image() {
     local anchore_version="$1"
     mkdir -p "${WORKSPACE}/caches"
-    docker save -o "${WORKSPACE}/caches/${PROJECT_REPONAME}-${anchore_version}-dev.tar" "${IMAGE_REPO}:dev-${anchore_version}"
+    docker save -o "${WORKSPACE}/caches/${PROJECT_REPONAME}-${anchore_version}-dev.tar" "${IMAGE_REPO}:dev"
 }
 
 setup_and_print_env_vars() {
