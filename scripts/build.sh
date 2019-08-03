@@ -200,7 +200,7 @@ load_image_and_push_dockerhub() {
 
 build_image() {
     if [[ "$1" == 'dev' ]]; then
-        local anchore_version="$1"
+        local anchore_version="latest"
         local db_version='latest'
     else
         local anchore_version="$1"
