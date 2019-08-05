@@ -60,8 +60,8 @@ main() {
         for i in $(find /anchore-engine -type f); do
             local file_name="$i"
             if [[ "${file_name}" =~ [:] ]]; then
-                local new_file_name="${file_name//:/_}"
-                mv "${file_name}" "${new_file_name}"
+                local new_file_name="/tmp/$(basename ${file_name//:/_})"
+                cp "${file_name}" "${new_file_name}"
                 file_name="${new_file_name}"
             fi
             if [[ $(skopeo inspect "docker-archive:${file_name}") ]] && [[ ! "${SCAN_FILES[@]}" =~ "${file_name}" ]]; then 
@@ -152,7 +152,7 @@ get_and_validate_options() {
             fi
             # Transform file name for skopeo functionality, replace : with _
             if [[ "${FILE_NAME}" =~ [:] ]]; then
-                local new_file_name="${FILE_NAME//:/_}"
+                local new_file_name="/tmp/$(basename ${FILE_NAME//:/_})"
                 mv "${FILE_NAME}" "${new_file_name}"
                 FILE_NAME="${new_file_name}"
             fi
