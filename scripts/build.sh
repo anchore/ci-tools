@@ -236,6 +236,7 @@ pull_test_images() {
     for img in "${img_array[@]}"; do
         docker pull "$img"
         docker save "$img" -o "${WORKSPACE}/images/"${img##*/}".tar"
+        chmod +rw "${WORKSPACE}/images/"${img##*/}".tar"
     done
 }
 
