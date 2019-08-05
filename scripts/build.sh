@@ -300,6 +300,7 @@ ci_test_job() {
 load_image() {
     local anchore_version="$1"
     docker load -i "${WORKSPACE}/caches/${PROJECT_REPONAME}-${anchore_version}-dev.tar"
+    docker tag ${IMAGE_REPO}:dev ${IMAGE_REPO}:dev-${anchore_version}
 }
 
 push_dockerhub() {
