@@ -35,8 +35,8 @@ EOF
 ##############################################
 
 # Specify what versions to build & what version should get 'latest' tag
-export BUILD_VERSIONS=('v0.3.3' 'v0.3.4' 'v0.4.0' 'v0.4.1')
-export LATEST_VERSION='v0.4.1'
+export BUILD_VERSIONS=('v0.3.4' 'v0.4.0' 'v0.4.1' 'v0.4.2')
+export LATEST_VERSION='v0.4.2'
 
 set_environment_variables() {
     # PROJECT_VARS are custom vars that are modified between projects
@@ -268,7 +268,7 @@ test_inline_script() {
     docker pull docker:stable-git
     curl -s "$INLINE_URL" | bash -s -- -d ".circleci/Dockerfile" docker:stable-git
     # test script with policy bundle
-    curl -s "$INLINE_URL" | bash -s -- -p -t 1500 -b ".circleci/.anchore/policy_bundle.json" "anchore/inline-scan:dev"
+    curl -s "$INLINE_URL" | bash -s -- -p -t 1500 -b ".circleci/.anchore/policy_bundle.json" "anchore/anchore-engine:latest"
     # test script with policy bundle & dockerfile
     pushd "${WORKING_DIRECTORY}/.circleci/node_critical_pass/"
     docker build -t example.com:5000/ci-test_1/node_critical-pass:latest .
