@@ -146,34 +146,34 @@ workflows:
     jobs:
     - build_stateless_image:
         name: build_stateless_dev
-        anchore_version: dev
+        anchore_version: latest
         filters:
           branches:
             ignore: /orb.*/
     - test_inline_script:
         name: test_inline_dev
-        anchore_version: dev
+        anchore_version: latest
         requires:
           - build_stateless_dev
     - push_dockerhub:
         name: push_stateless_dev
-        anchore_version: dev
+        anchore_version: latest
         context: dockerhub
         requires:
           - test_inline_dev
     - build_stateless_image:
-        name: build_stateless_latest
+        name: build_stateless_all
         filters: *filter_semver_tags
     - test_inline_script:
-        name: test_inline_latest
+        name: test_inline_all
         requires:
-          - build_stateless_latest
+          - build_stateless_all
         filters: *filter_semver_tags
     - push_dockerhub:
-        name: push_stateless_latest
+        name: push_stateless_all
         context: dockerhub
         requires:
-          - test_inline_latest
+          - test_inline_all
         filters: *filter_semver_tags
 
   lint_publish_dev_orb:
