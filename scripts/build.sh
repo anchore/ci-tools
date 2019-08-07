@@ -129,6 +129,7 @@ build_and_save_images() {
         for version in ${BUILD_VERSIONS[@]}; do
             echo "Building ${IMAGE_REPO}:dev-${version}"
             git reset --hard
+            # exit script if tag does not exist
             git checkout "tags/${version}" || { if [[ "$CI" == 'false' ]]; then true && local no_tag=true; else exit 1; fi; };
             build_image "$version"
             test_inline_image "$version"
