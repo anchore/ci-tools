@@ -7,6 +7,10 @@ An assortment of scripts & tools for integrating Anchore Engine into your CI/CD 
   * Currently only supports docker based CI/CD tools. 
   * Script is intended to run directly on Anchore Engine containers.
 
+### `scripts/inline_scan
+  * Allows scanning of local docker images.
+  * Invokes the anchore/inline-scan container to perform scan.
+
 # CircleCI Orbs
 
 Source code for CircleCi orbs can be found in `circleci-orbs/<ORB>/`.
