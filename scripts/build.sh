@@ -66,7 +66,7 @@ set_environment_variables() {
 # The build() function is used to locally build the project image - ${IMAGE_REPO}:dev
 build() {
     setup_build_environment
-    build_image dev
+    build_image latest
 }
 
 # The cleanup() function that runs whenever the script exits
@@ -111,9 +111,9 @@ main() {
 }
 
 dev_test() {
-    build_and_save_images dev
-    test_built_images dev
-    load_image_and_push_dockerhub dev
+    build_and_save_images latest
+    test_built_images latest
+    load_image_and_push_dockerhub latest
 }
 
 
@@ -171,7 +171,7 @@ test_built_images() {
         load_image "$build_version"
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${build_version}"
         test_bulk_image_volume "$build_version"
-        if [[ "$build_version" == dev ]]; then
+        if [[ "$build_version" == 'latest' ]]; then
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${GIT_BRANCH}/scripts/inline_scan"
         else
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${build_version}/scripts/inline_scan"
@@ -199,13 +199,8 @@ load_image_and_push_dockerhub() {
 ###########################################################
 
 build_image() {
-    if [[ "$1" == 'dev' ]]; then
-        local anchore_version="$1"
-        local db_version='latest'
-    else
-        local anchore_version="$1"
-        local db_version="$anchore_version"
-    fi
+    local anchore_version="$1"
+    local db_version="$anchore_version"
     docker pull "anchore/engine-db-preload:${db_version}"
     echo "Copying anchore-bootstrap.sql.gz from anchore/engine-db-preload:${db_version} image..."
     db_preload_id=$(docker run -d --entrypoint tail "docker.io/anchore/engine-db-preload:${db_version}" /dev/null | tail -n1)
@@ -307,7 +302,7 @@ push_dockerhub() {
         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
     fi
     # Push :latest or :[semver] tags to Dockerhub if on 'master' branch or a vX.X semver tag, and running in CircleCI
-    if [[ "$GIT_BRANCH" == 'master' || "${CIRCLE_TAG:=false}" =~ ^v[0-9]+(\.[0-9]+)*$ ]] && [[ "$CI" == true ]] && [[ ! "$anchore_version" == 'dev' ]]; then
+    if [[ "$GIT_BRANCH" == 'master' || "${CIRCLE_TAG:=false}" =~ ^v[0-9]+(\.[0-9]+)*$ ]] && [[ "$CI" == true ]] && [[ ! "$anchore_version" == 'latest' ]]; then
         docker tag "${IMAGE_REPO}:dev-${anchore_version}" "${IMAGE_REPO}:${anchore_version}"
         echo "Pushing to DockerHub - ${IMAGE_REPO}:${anchore_version}"
         docker push "${IMAGE_REPO}:${anchore_version}"
