@@ -7,7 +7,7 @@ ENV JQ_VERSION=1.6
 ENV GOSU_VERSION=1.11
 
 RUN set -ex; \
-    yum -y upgrade --skip-broken; \
+    yum -y upgrade; \
     yum install -y ca-certificates; \
     curl -Lo /usr/local/bin/jq "https://github.com/stedolan/jq/releases/download/jq-${JQ_VERSION}/jq-linux64"; \
     curl -o /usr/local/bin/jq.asc "https://raw.githubusercontent.com/stedolan/jq/master/sig/v${JQ_VERSION}/jq-linux64.asc";\
