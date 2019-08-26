@@ -44,7 +44,7 @@ Anchore Engine Inline Scanner/Analyzer --
   Wrapper script for performing vulnerability scan or image analysis on local docker images, utilizing the Anchore Engine inline_scan container.
   For more detailed usage instructions use the -h option after specifying scan or analyze.
 
-    Usage: ${0##*/} <scan> <analyze> [ OPTIONS ]
+    Usage: ${0##*/} <scan|analyze> [ OPTIONS ]
 
 EOF
 }
@@ -108,11 +108,14 @@ main() {
     trap 'interupt' SIGINT
 
     if [[ "$#" -lt 1 ]]; then
-        printf '\n\t%s\n\n' "ERROR - must specify options when using ${0##*/}" >&2
         display_usage >&2
+        printf '\n\t%s\n\n' "ERROR - must specify operation ('scan' or 'analyze')" >&2
         exit 1
     fi
-    if [[ "$1" == 'analyze' ]]; then
+    if [[ "$1" == 'help' ]]; then
+        display_usage >&2
+	exit 1
+    elif [[ "$1" == 'analyze' ]]; then
         shift "$((OPTIND))"
         ANALYZE=true
         get_and_validate_analyzer_options "$@"
@@ -122,6 +125,9 @@ main() {
         RUN_CMD+=('analyze')
         start_analysis
     else
+	if [[ "$1" == 'scan' ]]; then
+            shift "$((OPTIND))"
+	fi
         VULN_SCAN=true
         get_and_validate_scanner_options "$@"
         if [[ ! "${v_flag}" ]]; then
@@ -240,7 +246,7 @@ get_and_validate_scanner_options() {
             t  ) t_flag=true; TIMEOUT="${OPTARG}";;
             v  ) v_flag=true; VOLUME_PATH="$(cd "$(dirname "${OPTARG}")"; pwd -P)/$(basename "${OPTARG}")";; # Get absolute path of file
             V  ) V_flag=true;;
-            h  ) display_usage; exit;;
+            h  ) display_usage_scanner; exit;;
             \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage_scanner >&2; exit 1;;
             :  ) printf "\n\t%s\n\n%s\n\n" "  Option -${OPTARG} requires an argument" >&2; display_usage_scanner >&2; exit 1;;
         esac
@@ -248,7 +254,12 @@ get_and_validate_scanner_options() {
     shift "$((OPTIND - 1))"
 
     # Check for invalid options
-    if [[ ! $(which docker) ]]; then
+    if [[ "${#@}" -lt 1 ]]; then
+        printf '\n\t%s\n\n' "ERROR - must specify an image to scan" >&2
+        display_usage_scanner >&2
+        exit 1
+        # validate URL is functional anchore-engine api endpoint
+    elif [[ ! $(which docker) ]]; then
         printf '\n\t%s\n\n' 'ERROR - Docker is not installed or cannot be found in $PATH' >&2
         display_usage_scanner >&2
         exit 1
@@ -303,7 +314,7 @@ get_and_validate_images() {
 
     # Make sure all images are available locally, add to FAILED_IMAGES array if not
     for i in "${IMAGE_NAMES[@]}"; do
-        if ([[ "${p_flag}" ]] && [[ "${VULN_SCAN}" ]]) || [[ "${P_flag}" ]]; then
+        if ([[ "${p_flag}" == true ]] && [[ "${VULN_SCAN}" == true ]]) || [[ "${P_flag}" == true ]]; then
             echo "Pulling image -- $i"
             docker pull $i || true
         fi
