@@ -254,7 +254,7 @@ get_and_validate_scanner_options() {
     shift "$((OPTIND - 1))"
 
     # Check for invalid options
-    if [[ "${#@}" -lt 1 ]]; then
+    if [[ "${#@}" -lt 1 ]] && [[ ! "${v_flag}" ]]; then
         printf '\n\t%s\n\n' "ERROR - must specify an image to scan" >&2
         display_usage_scanner >&2
         exit 1
