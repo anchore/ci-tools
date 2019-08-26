@@ -114,7 +114,7 @@ def generate_reports(image_name, content_type=['all'], report_type=['all'], vuln
     return True
 
 
-def get_config(config_path='/config/config.yaml', config_url='https://raw.githubusercontent.com/anchore/ci-tools/conf/stateless_ci_config.yaml'):
+def get_config(config_path='/config/config.yaml', config_url='https://raw.githubusercontent.com/anchore/ci-tools/master/conf/stateless_ci_config.yaml'):
     conf_dir = os.path.dirname(config_path)
     if not os.path.exists(conf_dir):
         os.makedirs(conf_dir)
