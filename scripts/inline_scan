@@ -125,9 +125,9 @@ main() {
         RUN_CMD+=('analyze')
         start_analysis
     else
-	if [[ "$1" == 'scan' ]]; then
+        if [[ "$1" == 'scan' ]]; then
             shift "$((OPTIND))"
-	fi
+        fi
         VULN_SCAN=true
         get_and_validate_scanner_options "$@"
         if [[ ! "${v_flag}" ]]; then
@@ -367,7 +367,7 @@ prepare_inline_container() {
         printf '\n%s\n' "Creating volume mount -- ${VOLUME_PATH}:/anchore-engine"
         CREATE_CMD+=('-v "${VOLUME_PATH}:/anchore-engine:rw"')
     fi
-    
+
     CREATE_CMD+=('"${INLINE_SCAN_IMAGE}"')
     RUN_CMD+=('"${INLINE_SCAN_IMAGE}"')
 }

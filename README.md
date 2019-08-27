@@ -23,7 +23,7 @@ Container is built using the `scripts/build_image.sh` script. The version of anc
 
 After building the inline_scan container locally, the `scripts/inline_scan` script can be called using this container by setting the environment variable `ANCHORE_CI_IMAGE=stateless_anchore:ci`.
 
-### `scripts/inline_scan`
+## Inline vulnerability scanner
 Wrapper script for inline_scan container, requires Docker & BASH to be installed on system running the script.
 * Call script directly from github with: 
   
@@ -51,4 +51,10 @@ mkdir images
 docker save example-image:latest -o images/example-image+latest.tar
 docker save example-image:dev -o images/example-image+dev.tar
 inline_scan -v ./images -t 500
+```
+
+## Inline image analysis
+
+```bash
+inline_scan analyze -R https://anchore.example.com:8228 -u user -P foobar -m ./manifest.json example:latest
 ```
