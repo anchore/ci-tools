@@ -34,6 +34,7 @@ Anchore Engine Inline Analyzer --
 
     Usage: ${0##*/} [ OPTIONS ] <FULL_IMAGE_TAG>
 
+      -u <TEXT>  [required] Anchore user account name associated with image analysis (ex: -u 'admin')
       -a <TEXT>  [optional] Add annotations (ex: -a 'key=value,key=value')
       -d <PATH>  [optional] Specify image digest (ex: -d 'sha256:<64 hex characters>')
       -f <PATH>  [optional] Path to Dockerfile (ex: -f ./Dockerfile)
@@ -68,6 +69,8 @@ main() {
     # analyze image with anchore-engine
     ANALYZE_CMD=('anchore-manager analyzers exec')
     ANALYZE_CMD+=('--tag "${IMAGE_TAG}"')
+    ANALYZE_CMD+=('--account-id "${ANCHORE_ACCOUNT}"')
+
     if [[ "${g_flag}" ]]; then
         IMAGE_DIGEST_SHA=$(skopeo inspect --raw "docker-archive:///${image_file_path}" | jq -r .config.digest)
     fi
@@ -92,13 +95,13 @@ main() {
     fi
 
     ANALYZE_CMD+=('"$image_file_path" /anchore-engine/image-analysis-archive.tgz > /dev/null')
-    printf '\n%s' "Analyzing ${IMAGE_TAG}..."
+    printf '\n%s\n' "Analyzing ${IMAGE_TAG}..."
     eval "${ANALYZE_CMD[*]}"
 }
 
 get_and_validate_options() {
     # parse options
-    while getopts ':a:d:f:i:m:t:gh' option; do
+    while getopts ':u:a:d:f:i:m:t:gh' option; do
         case "${option}" in
             a  ) a_flag=true; ANCHORE_ANNOTATIONS="${OPTARG}";;
             d  ) d_flag=true; IMAGE_DIGEST_SHA="${OPTARG}";;
@@ -106,6 +109,7 @@ get_and_validate_options() {
             i  ) i_flag=true; ANCHORE_IMAGE_ID="${OPTARG}";;
             m  ) m_flag=true; MANIFEST_FILE="/anchore-engine/$(basename ${OPTARG})";;
             t  ) t_flag=true; TIMEOUT="${OPTARG}";;
+            u  ) u_flag=true; ANCHORE_ACCOUNT="${OPTARG}";;
             g  ) g_flag=true;;
             h  ) display_usage; exit;;
             \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
@@ -123,7 +127,11 @@ get_and_validate_options() {
         IMAGE_TAG="$1"
     fi
 
-    if [[ "${f_flag}" ]] && [[ ! -f "${DOCKERFILE}" ]]; then
+    if [[ ! "${u_flag}" ]]; then
+	printf '\n\t%s\n\n' "ERROR - must specify an anchore engine account name with -u" >&2
+	display_usage >&2
+	exit 1
+    elif [[ "${f_flag}" ]] && [[ ! -f "${DOCKERFILE}" ]]; then
         printf '\n\t%s\n\n' "ERROR - invalid path to dockerfile provided - ${DOCKERFILE}" >&2
         display_usage >&2
         exit 1
