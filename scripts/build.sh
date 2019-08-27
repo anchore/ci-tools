@@ -74,11 +74,6 @@ build_dev() {
     build_image dev
 }
 
-build_dev() {
-    setup_build_environment
-    build_image dev
-}
-
 # The cleanup() function that runs whenever the script exits
 cleanup() {
     ret="$?"
@@ -210,13 +205,8 @@ load_image_and_push_dockerhub() {
 ###########################################################
 
 build_image() {
-    if [[ "$1" == 'dev' ]]; then
-        local anchore_version="latest"
-        local db_version='latest'
-    else
-        local anchore_version="$1"
-        local db_version="$anchore_version"
-    fi
+    local anchore_version="$1"
+    local db_version="$anchore_version"
     docker pull "anchore/engine-db-preload:${db_version}"
 
     echo "Copying anchore-bootstrap.sql.gz from anchore/engine-db-preload:${db_version} image..."
