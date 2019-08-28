@@ -254,13 +254,13 @@ test_bulk_image_volume() {
     else
         pull_test_images java:latest nginx:latest ubuntu:latest
     fi
-    cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -V -v "${WORKSPACE}/images" -t 500
+    cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -v "${WORKSPACE}/images" -t 500
 }
 
 test_inline_image() {
     local anchore_version="$1"
     export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev"
-    cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -V -p  alpine:latest
+    cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -p  alpine:latest
 }
 
 test_inline_script() {
