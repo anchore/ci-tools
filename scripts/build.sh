@@ -260,7 +260,7 @@ test_bulk_image_volume() {
 test_inline_image() {
     local anchore_version="$1"
     export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev"
-    cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -p  alpine:latest
+    cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -p  alpine:latest ubuntu:latest
 }
 
 test_inline_script() {
