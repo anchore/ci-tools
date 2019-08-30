@@ -106,6 +106,7 @@ jobs:
     - run:
         name: Build and Save Images
         command: scripts/build.sh build_and_save_images << parameters.anchore_version >>
+        no_output_timeout: 20m
     - persist_to_workspace:
         root: /home/circleci/workspace/
         paths:
@@ -125,6 +126,7 @@ jobs:
     - run:
         name: Test Inline Script
         command: scripts/build.sh test_built_images << parameters.anchore_version >>
+        no_output_timeout: 20m
 
   push_dockerhub:
     parameters:
@@ -140,6 +142,7 @@ jobs:
     - run:
         name: Load & Push Image to DockerHub
         command: scripts/build.sh load_image_and_push_dockerhub << parameters.anchore_version >>
+        no_output_timeout: 20m
 
 workflows:
   default_workflow:
