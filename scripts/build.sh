@@ -35,8 +35,8 @@ EOF
 ##############################################
 
 # Specify what versions to build & what version should get 'latest' tag
-export BUILD_VERSIONS=('v0.3.4' 'v0.4.0' 'v0.4.1' 'v0.4.2')
-export LATEST_VERSION='v0.4.2'
+export BUILD_VERSIONS=('v0.4.0' 'v0.4.1' 'v0.4.2' 'v0.5.0')
+export LATEST_VERSION='v0.5.0'
 
 set_environment_variables() {
     # PROJECT_VARS are custom vars that are modified between projects
@@ -216,7 +216,7 @@ build_image() {
 
     docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
     local docker_name="${RANDOM:-temp}-db-preload"
-    docker run -it --name "$docker_name" "${IMAGE_REPO}:dev" debug /bin/bash -c "anchore-cli system wait --feedsready 'vulnerabilities,nvd' && anchore-cli system status && anchore-cli system feeds list"
+    docker run -it --name "$docker_name" "${IMAGE_REPO}:dev" debug /bin/bash -c "anchore-cli system wait --feedsready 'vulnerabilities' && anchore-cli system status && anchore-cli system feeds list"
     local docker_id=$(docker inspect $docker_name | jq '.[].Id')
     docker kill "$docker_id" && docker rm "$docker_id"
     DOCKER_RUN_IDS+=("${docker_id:0:6}")
