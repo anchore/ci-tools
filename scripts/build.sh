@@ -158,7 +158,9 @@ cleanup() {
             done
         fi
         popd &> /dev/null
-        rm -rf "$(dirname $WORKING_DIRECTORY)"
+        if [[ "$WORKING_DIRECTORY" =~ 'tempci' ]]; then
+            rm -rf "$(dirname $WORKING_DIRECTORY)"
+        fi
     else
         echo "Workspace Dir: $WORKSPACE"
         echo "Working Dir: $WORKING_DIRECTORY"
