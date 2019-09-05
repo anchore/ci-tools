@@ -63,7 +63,6 @@ Anchore Engine Inline Scan --
 
       -b <PATH>  [optional] Path to local Anchore policy bundle (ex: -b ./policy_bundle.json)
       -d <PATH>  [optional] Path to local Dockerfile (ex: -d ./dockerfile)
-      -v <PATH>  [optional] Path to directory, all image archives in directory will be scanned (ex: -v /tmp/scan_images/)
       -t <TEXT>  [optional] Specify timeout for image scanning in seconds. Defaults to 300s. (ex: -t 500)
       -f  [optional] Exit script upon failed Anchore policy evaluation
       -p  [optional] Pull remote docker images
@@ -130,9 +129,7 @@ main() {
         fi
         VULN_SCAN=true
         get_and_validate_scanner_options "$@"
-        if [[ ! "${v_flag}" ]]; then
-            get_and_validate_images "${VALIDATED_OPTIONS}"
-        fi
+        get_and_validate_images "${VALIDATED_OPTIONS}"
         prepare_inline_container
         CREATE_CMD+=('scan')
         RUN_CMD+=('scan')
@@ -236,7 +233,7 @@ get_and_validate_analyzer_options() {
 
 get_and_validate_scanner_options() {
     # Parse options
-    while getopts ':d:b:v:t:fhrVp' option; do
+    while getopts ':d:b:t:fhrVp' option; do
         case "${option}" in
             d  ) d_flag=true; DOCKERFILE="${OPTARG}";;
             f  ) f_flag=true;;
@@ -244,7 +241,6 @@ get_and_validate_scanner_options() {
             b  ) b_flag=true; POLICY_BUNDLE="${OPTARG}";;
             p  ) p_flag=true;;
             t  ) t_flag=true; TIMEOUT="${OPTARG}";;
-            v  ) v_flag=true; VOLUME_PATH="$(cd "$(dirname "${OPTARG}")"; pwd -P)/$(basename "${OPTARG}")";; # Get absolute path of file
             V  ) V_flag=true;;
             h  ) display_usage_scanner; exit;;
             \? ) printf "\n\t%s\n\n" "  Invalid option: -${OPTARG}" >&2; display_usage_scanner >&2; exit 1;;
@@ -254,7 +250,7 @@ get_and_validate_scanner_options() {
     shift "$((OPTIND - 1))"
 
     # Check for invalid options
-    if [[ "${#@}" -lt 1 ]] && [[ ! "${v_flag}" ]]; then
+    if [[ "${#@}" -lt 1 ]]; then
         printf '\n\t%s\n\n' "ERROR - must specify an image to scan" >&2
         display_usage_scanner >&2
         exit 1
@@ -279,16 +275,8 @@ get_and_validate_scanner_options() {
         printf '\n\t%s\n\n' "ERROR - Dockerfile: ${DOCKERFILE} does not exist" >&2
         display_usage_scanner >&2
         exit 1
-    elif [[ ! "${v_flag}" ]] && [[ "${#@}" -eq 0 ]]; then
-        printf '\n\t%s\n\n' "ERROR - ${0##*/} requires at least 1 image name as input, unless utilizing -v option" >&2
-        display_usage_scanner >&2
-        exit 1
-    elif [[ "${v_flag}" ]] && [[ ! -d "${VOLUME_PATH}" ]]; then
-        printf '\n\t%s\n\n' "ERROR - ${VOLUME_PATH} is not a directory" >&2
-        display_usage_scanner >&2
-        exit 1
-    elif [[ "${v_flag}" ]] && [[ "${d_flag}" ]]; then
-        printf '\n\t%s\n\n' "ERROR - cannot specify image volume & Dockerfile. Dockerfile option only supports scanning one image at time" >&2
+    elif [[ "${#@}" -eq 0 ]]; then
+        printf '\n\t%s\n\n' "ERROR - ${0##*/} requires at least 1 image name as input" >&2
         display_usage_scanner >&2
         exit 1
     elif [[ "${t_flag}" ]] && [[ ! "${TIMEOUT}" =~ ^[0-9]+$ ]]; then
@@ -363,10 +351,6 @@ prepare_inline_container() {
         CREATE_CMD+=('-e VERBOSE=true')
         RUN_CMD+=('-e VERBOSE=true')
     fi
-    if [[ "${v_flag}" ]]; then
-        printf '\n%s\n' "Creating volume mount -- ${VOLUME_PATH}:/anchore-engine"
-        CREATE_CMD+=('-v "${VOLUME_PATH}:/anchore-engine:rw"')
-    fi
 
     CREATE_CMD+=('"${INLINE_SCAN_IMAGE}"')
     RUN_CMD+=('"${INLINE_SCAN_IMAGE}"')
@@ -383,7 +367,7 @@ start_vuln_scan() {
     fi
 
     # If no files need to be copied to container, pipe docker save output to stdin of docker run command.
-    if [[ ! "${d_flag}" ]] && [[ ! "${v_flag}" ]] && [[ ! "${b_flag}" ]] && [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
+    if [[ ! "${d_flag}" ]] && [[ ! "${b_flag}" ]] && [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
         RUN_CMD+=('-i "${SCAN_IMAGES[*]}"')
 
         # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
@@ -497,14 +481,11 @@ save_and_copy_images() {
         local base_image_name="${image##*/}"
         echo "Saving ${image} for local analysis"
         local save_file_name="${base_image_name}.tar"
+        # IMAGE_FILES is used for storing temp image paths for cleanup at end of script
         IMAGE_FILES+=("$save_file_name")
         
-        if [[ "${v_flag}" ]]; then
-            local save_file_path="${VOLUME_PATH}/${save_file_name}"
-        else
-            mkdir -p /tmp/anchore
-            local save_file_path="/tmp/anchore/${save_file_name}"
-        fi
+        mkdir -p /tmp/anchore
+        local save_file_path="/tmp/anchore/${save_file_name}"
 
         # If image is passed without a tag, append :latest to docker save to prevent skopeo manifest error
         if [[ ! "${image}" =~ [:]+ ]]; then
@@ -522,10 +503,8 @@ save_and_copy_images() {
             exit 1
         fi
 
-        if [[ ! "${v_flag}" ]]; then
-            docker cp "${save_file_path}" "${DOCKER_NAME}:/anchore-engine/${save_file_name}"
-            rm -f "${save_file_path}"
-        fi
+        docker cp "${save_file_path}" "${DOCKER_NAME}:/anchore-engine/${save_file_name}"
+        rm -f "${save_file_path}"
     done
 }
 

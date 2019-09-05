@@ -58,6 +58,73 @@ set_environment_variables() {
 }
 
 
+########################################
+###   MAIN PROGRAM BOOTSTRAP LOGIC   ###
+########################################
+
+main() {
+    # Save current working directory for cleanup on exit
+    pushd . &> /dev/null
+
+    # Trap all signals that cause script to exit & run cleanup function before exiting
+    trap 'cleanup' SIGINT SIGTERM ERR EXIT
+    trap 'printf "\n%s+ PIPELINE ERROR - exit code %s - cleaning up %s\n" "${color_red}" "$?" "${color_normal}"' SIGINT SIGTERM ERR
+
+    # Get ci_utils.sh from anchore test-infra repo - used for common functions
+    # If running on test-infra container ci_utils.sh is installed to /usr/local/bin/
+    # if [[ -f /usr/local/bin/ci_utils.sh ]]; then
+    #     source ci_utils.sh
+    # elif [[ -f "${WORKSPACE}/test-infra/scripts/ci_utils.sh" ]]; then
+    #     source "${WORKSPACE}/test-infra/scripts/ci_utils.sh"
+    # else
+    #     git clone https://github.com/anchore/test-infra "${WORKSPACE}/test-infra"
+    #     source "${WORKSPACE}/test-infra/scripts/ci_utils.sh"
+    # fi
+
+    # Setup terminal colors for printing
+    export TERM=xterm
+    color_red=$(tput setaf 1)
+    color_cyan=$(tput setaf 6)
+    color_yellow=$(tput setaf 3)
+    color_normal=$(tput setaf 9)
+    echo
+
+    set_environment_variables
+
+    # Trap all bash commands & print to screen. Like using set -v but allows printing in color
+    trap 'printf "%s+ %s%s\n" "${color_cyan}" "$BASH_COMMAND" "${color_normal}" >&2' DEBUG
+
+    # Run script with the 'build' param to build the image
+    # Run script with the 'dev' param to execute the pipeline locally on just the latest version
+    # Run script with the 'test' param to execute the full pipeline locally on all versions
+    # Run script with the 'ci' param to execute a fully mocked CircleCI pipeline, utilizing docker in docker
+    # If first param is a valid function name, execute the function & pass all following params to function
+    if [[ "$#" -eq 0 ]]; then
+        display_usage >&2
+        exit 1
+    elif [[ "$1" == 'build' ]]; then
+        build
+    elif [[ "$1" == 'dev' ]]; then
+        build_dev
+    elif [[ "$1" == 'dev_test' ]]; then
+        dev_test
+    elif [[ "$1" == 'test' ]]; then
+        test
+    elif [[ "$1" == 'ci' ]]; then
+        ci_test_run_workflow
+    else
+        export SKIP_FINAL_CLEANUP=true
+        if declare -f "$1" > /dev/null; then
+            "$@"
+        else
+            display_usage >&2
+            printf "%sERROR - %s is not a valid function name %s\n" "$color_red" "$1" "$color_normal" >&2
+            exit 1
+        fi
+    fi
+}
+
+
 #######################################################
 ###   MAIN PROGRAM FUNCTIONS - ALPHABETICAL ORDER   ###
 ###   functions are called by main bootsrap logic   ###
@@ -108,8 +175,8 @@ ci_test_run_workflow() {
     ci_test_job 'docker.io/anchore/test-infra:latest' 'load_image_and_push_dockerhub'
 }
 
-# The main() function represents the full CI pipeline flow, can be used to run the test pipeline locally
-main() {
+# The test() function represents the full CI pipeline flow, can be used to run the test pipeline locally
+test() {
     build_and_save_images
     test_built_images
     load_image_and_push_dockerhub
@@ -164,7 +231,6 @@ test_built_images() {
             export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${version}"
             git reset --hard
             git checkout "tags/${version}" || { if [[ "$CI" == 'false' ]]; then true && local no_tag=true; else exit 1; fi; };
-            test_bulk_image_volume ${version}
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${version}/scripts/inline_scan"
             # Move back to previously checked out branch
             if ! "${no_tag:=false}"; then
@@ -176,7 +242,6 @@ test_built_images() {
     else
         load_image "$build_version"
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev"
-        test_bulk_image_volume "$build_version"
         if [[ "$build_version" == 'latest' ]]; then
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${GIT_BRANCH}/scripts/inline_scan"
         else
@@ -226,35 +291,6 @@ build_image() {
 install_dependencies() {
     # No dependencies to install for this project
     true
-}
-
-pull_test_images() {
-    local img_array=("$@")
-    mkdir -p "${WORKSPACE}/images"
-    for img in "${img_array[@]}"; do
-        docker pull "$img"
-        docker save "$img" -o "${WORKSPACE}/images/"${img##*/}".tar"
-        chmod +rw "${WORKSPACE}/images/"${img##*/}".tar"
-    done
-}
-
-test_bulk_image_volume() {
-    local anchore_version="$1"
-    if [[ "$CI" == 'true' ]]; then
-        mkdir -p ${WORKSPACE}/images
-        ssh remote-docker "mkdir -p ${WORKSPACE}/scripts"
-        if [[ "$anchore_version" == 'v0.3.3' ]]; then
-            git checkout v0.3.4 scripts/build.sh
-            scp scripts/build.sh remote-docker:"${WORKSPACE}/scripts/build.sh"
-        else
-            scp scripts/build.sh remote-docker:"${WORKSPACE}/scripts/build.sh"
-        fi
-        ssh remote-docker "WORKSPACE=$WORKSPACE ${WORKSPACE}/scripts/build.sh pull_test_images alpine:latest java:latest nginx:latest"
-        ssh remote-docker "chmod -R +rw ${WORKSPACE}/images"
-    else
-        pull_test_images java:latest nginx:latest ubuntu:latest
-    fi
-    cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -v "${WORKSPACE}/images" -t 500
 }
 
 test_inline_image() {
@@ -367,66 +403,4 @@ setup_build_environment() {
     install_dependencies || true
 }
 
-########################################
-###   MAIN PROGRAM BOOTSTRAP LOGIC   ###
-########################################
-
-# Save current working directory for cleanup on exit
-pushd . &> /dev/null
-
-# Trap all signals that cause script to exit & run cleanup function before exiting
-trap 'cleanup' SIGINT SIGTERM ERR EXIT
-trap 'printf "\n%s+ PIPELINE ERROR - exit code %s - cleaning up %s\n" "${color_red}" "$?" "${color_normal}"' SIGINT SIGTERM ERR
-
-# Get ci_utils.sh from anchore test-infra repo - used for common functions
-# If running on test-infra container ci_utils.sh is installed to /usr/local/bin/
-# if [[ -f /usr/local/bin/ci_utils.sh ]]; then
-#     source ci_utils.sh
-# elif [[ -f "${WORKSPACE}/test-infra/scripts/ci_utils.sh" ]]; then
-#     source "${WORKSPACE}/test-infra/scripts/ci_utils.sh"
-# else
-#     git clone https://github.com/anchore/test-infra "${WORKSPACE}/test-infra"
-#     source "${WORKSPACE}/test-infra/scripts/ci_utils.sh"
-# fi
-
-# Setup terminal colors for printing
-export TERM=xterm
-color_red=$(tput setaf 1)
-color_cyan=$(tput setaf 6)
-color_yellow=$(tput setaf 3)
-color_normal=$(tput setaf 9)
-echo
-
-set_environment_variables
-
-# Trap all bash commands & print to screen. Like using set -v but allows printing in color
-trap 'printf "%s+ %s%s\n" "${color_cyan}" "$BASH_COMMAND" "${color_normal}" >&2' DEBUG
-
-# Run script with the 'build' param to build the image
-# Run script with the 'dev' param to execute the pipeline locally on just the latest version
-# Run script with the 'test' param to execute the full pipeline locally on all versions
-# Run script with the 'ci' param to execute a fully mocked CircleCI pipeline, utilizing docker in docker
-# If first param is a valid function name, execute the function & pass all following params to function
-if [[ "$#" -eq 0 ]]; then
-    display_usage >&2
-    exit 1
-elif [[ "$1" == 'build' ]]; then
-    build
-elif [[ "$1" == 'dev' ]]; then
-    build_dev
-elif [[ "$1" == 'dev_test' ]]; then
-    dev_test
-elif [[ "$1" == 'test' ]]; then
-    main
-elif [[ "$1" == 'ci' ]]; then
-    ci_test_run_workflow
-else
-    export SKIP_FINAL_CLEANUP=true
-    if declare -f "$1" > /dev/null; then
-        "$@"
-    else
-        display_usage >&2
-        printf "%sERROR - %s is not a valid function name %s\n" "$color_red" "$1" "$color_normal" >&2
-        exit 1
-    fi
-fi
+main "$@"
