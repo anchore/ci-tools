@@ -49,14 +49,6 @@ inline_scan -d ./Dockerfile example-image:latest
 inline_scan -f -p ./policy-bundle.json example-image:latest
 ```
 
-#### Scan a directory full of image archives, with timeout on scans set to 500s.
-```bash
-mkdir images
-docker save example-image:latest -o images/example-image+latest.tar
-docker save example-image:dev -o images/example-image+dev.tar
-inline_scan -v ./images -t 500
-```
-
 ## Inline image analysis
 
 For use cases where it is desirable to perform image analysis for a locally build container image, and import the image analysis to an existing Anchore Engine installation, we support a methodology using the inline_scan tool.  With this technique, you can 'add' an image to your anchore engine service by analyzing any image that is available locally (say, on the docker host on which the image was built). You can then import the analysis data into anchore engine, rather than the regular method where images are pulled from a registry when added to anchore engine.
