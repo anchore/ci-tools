@@ -5,4 +5,4 @@ environment:
   ANCHORE_VERSION: v0.5.0
 
 docker:
-  - image: docker:stable
+  - image: docker:stable-git
