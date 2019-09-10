@@ -41,7 +41,7 @@
                         },
                         {
                             "name": "severity",
-                            "value": "medium"
+                            "value": "high"
                         },
                         {
                             "name": "fix_available",
