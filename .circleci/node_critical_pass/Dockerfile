@@ -1,4 +1,4 @@
-FROM node@sha256:899febf5a7af3bec94e9a67244087db218a42d55e748d9504b00019705bd3a18
+FROM node:latest
 
 RUN mkdir -p /home/node/ && apt-get update && apt-get -y upgrade && apt-get -y install curl
 COPY ./app/ /home/node/app/
