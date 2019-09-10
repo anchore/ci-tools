@@ -27,7 +27,7 @@
             "name": "default",
             "rules": [
                 {
-                    "action": "STOP",
+                    "action": "WARN",
                     "gate": "vulnerabilities",
                     "id": "92b1c635-5ba4-422d-951b-0e4172a18d1a",
                     "params": [
@@ -41,7 +41,7 @@
                         },
                         {
                             "name": "severity",
-                            "value": "high"
+                            "value": "medium"
                         },
                         {
                             "name": "fix_available",
