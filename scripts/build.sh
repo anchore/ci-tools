@@ -4,6 +4,8 @@
 # Don't allow unset variables. Trace all functions with DEBUG trap
 set -euo pipefail -o functrace
 
+DB_PRELOAD_IMAGE_TAG=${DB_PRELOAD_IMAGE_TAG:-''}
+
 display_usage() {
     echo "${color_yellow}"
     cat << EOF
@@ -47,7 +49,7 @@ set_environment_variables() {
         "PROJECT_REPONAME=${CIRCLE_PROJECT_REPONAME:=ci-tools}" \
         "WORKING_DIRECTORY=${WORKING_DIRECTORY:=$(eval echo ${CIRCLE_WORKING_DIRECTORY:="${HOME}/tempci_${IMAGE_REPO##*/}_${RANDOM}/project"})}" \
         "WORKSPACE=${WORKSPACE:=$(dirname "$WORKING_DIRECTORY")/workspace}" \
-        "DB_PRELOAD_IMAGE_TAG=''"
+        "DB_PRELOAD_IMAGE_TAG=${DB_PRELOAD_IMAGE_TAG}"
     )
     # These vars are static & defaults should not need to be changed
     PROJECT_VARS+=( \
@@ -274,10 +276,10 @@ load_image_and_push_dockerhub() {
 
 build_image() {
     local anchore_version="$1"
-    if [[ -z DB_PRELOAD_IMAGE_TAG ]]; then
+    if [[ -z "$DB_PRELOAD_IMAGE_TAG" ]]; then
         local db_version="$anchore_version"
     else
-        local db_version="$PRELOAD_DB_IMAGE_TAG"
+        local db_version="$DB_PRELOAD_IMAGE_TAG"
     fi
     docker pull "anchore/engine-db-preload:${db_version}"
 
