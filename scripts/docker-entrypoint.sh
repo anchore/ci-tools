@@ -8,7 +8,9 @@ fi
 
 main() {
     # use 'debug' as the first input param for script. This starts all services, then execs all proceeding inputs
-    if [[ "$1" = 'debug' ]]; then
+    if [[ "$#" -lt 1 ]]; then
+        start_services 'exec'
+    elif [[ "$1" = 'debug' ]]; then
         start_services
         exec "${@:2}"
     # use 'start' as the first input param for script. This will start all services & execs anchore-manager.
