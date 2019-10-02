@@ -29,7 +29,9 @@ ENV PG_MAJOR="9.6"
 ENV PGDATA="/var/lib/postgresql/data"
 
 RUN set -eux; \
-    yum install -y  https://download.postgresql.org/pub/repos/yum/9.6/redhat/rhel-7-x86_64/pgdg-redhat96-9.6-3.noarch.rpm; \
+    # TEMPORARY - install earlier repo rpm as the latest rpms are broken 10-01-2019
+    #yum install -y  https://download.postgresql.org/pub/repos/yum/9.6/redhat/rhel-7-x86_64/pgdg-redhat96-9.6-3.noarch.rpm; \
+    yum install -y https://download.postgresql.org/pub/repos/yum/9.6/redhat/rhel-7-x86_64/pgdg-redhat-repo-42.0-4.noarch.rpm; \
     yum install -y postgresql96 postgresql96-server
 
 RUN set -eux; \
