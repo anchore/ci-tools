@@ -427,16 +427,16 @@ start_analysis() {
     mkdir -p /tmp/anchore
     HCODE=$(curl -sS --output /tmp/anchore/anchore_output.log --write-out "%{http_code}" -u "${ANCHORE_USER}:${ANCHORE_PASS}" "${ANCHORE_URL%%/}/v1/account")
     if [[ "${HCODE}" == 200 ]] && [[ -f "/tmp/anchore/anchore_output.log" ]]; then
-	ANCHORE_ACCOUNT=$(cat /tmp/anchore/anchore_output.log | grep '"name"' | awk -F'"' '{print $4}')
-	CREATE_CMD+=('-u "${ANCHORE_ACCOUNT}"')
+        ANCHORE_ACCOUNT=$(cat /tmp/anchore/anchore_output.log | grep '"name"' | awk -F'"' '{print $4}')
+        CREATE_CMD+=('-u "${ANCHORE_ACCOUNT}"')
     else
-	printf '\n\t%s\n\n' "ERROR - unable to fetch account information from anchore-engine for specified user"
-	if [ -f /tmp/anchore/anchore_output.log ]; then
-	    printf '%s\n\n' "***SERVICE RESPONSE****">&2
-	    cat /tmp/anchore/anchore_output.log >&2
-	    printf '\n%s\n' "***END SERVICE RESPONSE****" >&2
-	fi
-	exit 1
+        printf '\n\t%s\n\n' "ERROR - unable to fetch account information from anchore-engine for specified user"
+        if [ -f /tmp/anchore/anchore_output.log ]; then
+            printf '%s\n\n' "***SERVICE RESPONSE****">&2
+            cat /tmp/anchore/anchore_output.log >&2
+            printf '\n%s\n' "***END SERVICE RESPONSE****" >&2
+        fi
+	    exit 1
     fi
 
     CREATE_CMD+=("${SCAN_IMAGES[*]}")
@@ -453,20 +453,19 @@ start_analysis() {
     if [[ -f "/tmp/anchore/${analysis_archive_name}" ]]; then
         printf '%s\n' " Analysis complete!"
         printf '\n%s\n' "Sending analysis archive to ${ANCHORE_URL%%/}"
-	
-	HCODE=$(curl -sS --output /tmp/anchore/anchore_output.log --write-out "%{http_code}" -u "${ANCHORE_USER}:${ANCHORE_PASS}" -F "archive_file=@/tmp/anchore/${analysis_archive_name}" "${ANCHORE_URL%%/}/v1/import/images")
-	if [[ "${HCODE}" != 200 ]]; then
-	    printf '\n\t%s\n\n' "ERROR - unable to POST ${analysis_archive_name} to ${ANCHORE_URL%%/}/v1/import/images" >&2
-	    if [ -f /tmp/anchore/anchore_output.log ]; then
-		printf '%s\n\n' "***SERVICE RESPONSE****">&2
-		cat /tmp/anchore/anchore_output.log >&2
-		printf '\n%s\n' "***END SERVICE RESPONSE****" >&2
-	    fi
-	    exit 1
-	else
-	    if [ -f /tmp/anchore/anchore_output.log ]; then
-		cat /tmp/anchore/anchore_output.log
-	    fi
+        HCODE=$(curl -sS --output /tmp/anchore/anchore_output.log --write-out "%{http_code}" -u "${ANCHORE_USER}:${ANCHORE_PASS}" -F "archive_file=@/tmp/anchore/${analysis_archive_name}" "${ANCHORE_URL%%/}/v1/import/images")
+        if [[ "${HCODE}" != 200 ]]; then
+            printf '\n\t%s\n\n' "ERROR - unable to POST ${analysis_archive_name} to ${ANCHORE_URL%%/}/v1/import/images" >&2
+            if [ -f /tmp/anchore/anchore_output.log ]; then
+                printf '%s\n\n' "***SERVICE RESPONSE****">&2
+                cat /tmp/anchore/anchore_output.log >&2
+                printf '\n%s\n' "***END SERVICE RESPONSE****" >&2
+            fi
+            exit 1
+        else
+            if [ -f /tmp/anchore/anchore_output.log ]; then
+                cat /tmp/anchore/anchore_output.log
+            fi
         fi
     else
         printf '\n\t%s\n\n' "ERROR - analysis file invalid: /tmp/anchore/${analysis_archive_name}. An error occured during analysis."  >&2

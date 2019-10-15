@@ -128,9 +128,9 @@ get_and_validate_options() {
     fi
 
     if [[ ! "${u_flag}" ]]; then
-	printf '\n\t%s\n\n' "ERROR - must specify an anchore engine account name with -u" >&2
-	display_usage >&2
-	exit 1
+        printf '\n\t%s\n\n' "ERROR - must specify an anchore engine account name with -u" >&2
+        display_usage >&2
+        exit 1
     elif [[ "${f_flag}" ]] && [[ ! -f "${DOCKERFILE}" ]]; then
         printf '\n\t%s\n\n' "ERROR - invalid path to dockerfile provided - ${DOCKERFILE}" >&2
         display_usage >&2
