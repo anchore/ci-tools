@@ -4,8 +4,6 @@
 # Don't allow unset variables. Trace all functions with DEBUG trap
 set -euo pipefail -o functrace
 
-DB_PRELOAD_IMAGE_TAG=${DB_PRELOAD_IMAGE_TAG:-''}
-
 display_usage() {
     echo "${color_yellow}"
     cat << EOF
@@ -21,8 +19,9 @@ display_usage() {
         WORKING_DIRECTORY = /home/test/workdir - used as a temporary workspace for build/test
         WORKSPACE = /home/test/workspace - used to store temporary artifacts
 
-    Usage: ${0##*/} [ build | test | dev| ci | function_name ] < function_args > < ... > 
+    Usage: ${0##*/} [ -s ] [ build | test | dev| ci | function_name ] < function_args > < ... > 
         
+        s - Build slim preloaded image without nvd2 feed data
         build - Build a dev image tagged IMAGE_REPO:dev'
         ci - Run mocked CircleCI pipeline using Docker-in-Docker
         function_name - Invoke a function directly using build environment
@@ -40,7 +39,6 @@ EOF
 export BUILD_VERSIONS=('v0.4.1' 'v0.4.2' 'v0.5.0' 'v0.5.1')
 export LATEST_VERSION='v0.5.1'
 
-
 # PROJECT_VARS are custom vars that are modified between projects
 # Expand all required ENV vars or set to default values with := variable substitution
 # Use eval on $CIRCLE_WORKING_DIRECTORY to ensure default value (~/project) gets expanded to the absolute path
@@ -49,7 +47,7 @@ PROJECT_VARS=( \
     "PROJECT_REPONAME=${CIRCLE_PROJECT_REPONAME:=ci-tools}" \
     "WORKING_DIRECTORY=${WORKING_DIRECTORY:=$(eval echo ${CIRCLE_WORKING_DIRECTORY:="${HOME}/tempci_${IMAGE_REPO##*/}_${RANDOM}/project"})}" \
     "WORKSPACE=${WORKSPACE:=$(dirname "$WORKING_DIRECTORY")/workspace}" \
-    "DB_PRELOAD_IMAGE_TAG=${DB_PRELOAD_IMAGE_TAG}"
+    "DB_PRELOAD_IMAGE_TAG=${DB_PRELOAD_IMAGE_TAG:-''}"
 )
 # These vars are static & defaults should not need to be changed
 PROJECT_VARS+=( \
@@ -65,9 +63,24 @@ PROJECT_VARS+=( \
 
 main() {
     if [[ "$#" -eq 0 ]]; then
+        echo "ERROR - $0 requires at least 1 input" >&2
         display_usage >&2
         exit 1
     fi
+
+    while getopts ':sh' option; do
+        case "${option}" in
+            s  ) s_flag=true;;
+            h  ) display_usage; exit;;
+            \? ) printf "\n\t%s\n\n" "Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
+            :  ) printf "\n\t%s\n\n%s\n\n" "Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
+        esac
+    done
+    shift "$((OPTIND - 1))"
+
+    PROJECT_VARS+=( \
+        "SLIM_BUILD=${s_flag:=false}" \
+    )
 
     # Save current working directory for cleanup on exit
     pushd . &> /dev/null
@@ -131,7 +144,7 @@ main() {
             "$@"
         else
             display_usage >&2
-            printf "%sERROR - %s is not a valid function name %s\n" "$color_red" "$1" "$color_normal" >&2
+            printf "%sERROR - %s is not a valid function name %s\n" "${color_red}" "$1" "${color_normal}" >&2
             exit 1
         fi
     fi
