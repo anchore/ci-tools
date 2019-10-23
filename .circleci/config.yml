@@ -93,7 +93,7 @@ jobs:
     - store_artifacts:
         path: anchore-reports
 
-  build_stateless_image:
+  build_inline_image:
     parameters:
       anchore_version: 
         default: ""
@@ -144,33 +144,54 @@ jobs:
         command: scripts/build.sh load_image_and_push_dockerhub << parameters.anchore_version >>
         no_output_timeout: 30m
 
+  build_test_push_inline_slim_v051:
+    docker:
+      - image: circleci/python:3.6
+    steps:
+    - setup_remote_docker
+    - checkout
+    - run:
+        name: Build and Save Images
+        command: IMAGE_REPO=docker.io/anchore/engine-db-preload-slim scripts/build.sh -s build_and_save_images v0.5.1
+        no_output_timeout: 30m
+    - run:
+        name: Test Inline Script
+        command: IMAGE_REPO=docker.io/anchore/engine-db-preload-slim scripts/build.sh -s test_built_images v0.5.1
+        no_output_timeout: 30m
+    - run:
+        name: Load & Push Image to DockerHub
+        command: IMAGE_REPO=docker.io/anchore/engine-db-preload-slim scripts/build.sh -s load_image_and_push_dockerhub v0.5.1
+        no_output_timeout: 30m
+
 workflows:
   default_workflow:
     jobs:
-    - build_stateless_image:
+    - build_test_push_inline_slim_v051:
+        context: dockerhub
+    - build_inline_image:
         name: build_stateless_dev
-        anchore_version: latest
+        anchore_version: dev
         filters:
           branches:
             ignore: /orb.*/
     - test_inline_script:
         name: test_inline_dev
-        anchore_version: latest
+        anchore_version: dev
         requires:
           - build_stateless_dev
     - push_dockerhub:
         name: push_stateless_dev
-        anchore_version: latest
+        anchore_version: dev
         context: dockerhub
         requires:
           - test_inline_dev
-    - build_stateless_image:
-        name: build_stateless_all
+    - build_inline_image:
+        name: build_inline_all_versions
         filters: *filter_semver_tags
     - test_inline_script:
         name: test_inline_all
         requires:
-          - build_stateless_all
+          - build_inline_all_versions
         filters: *filter_semver_tags
     - push_dockerhub:
         name: push_stateless_all
@@ -249,14 +270,19 @@ workflows:
               only:
                 - master
     jobs:
-    - build_stateless_image:
-        name: build_stateless_nightly
+    - build_test_push_inline_slim_v051:
+        context: dockerhub
+    - build_inline_image:
+        name: build_inline_nightly
+        anchore_version: all
     - test_inline_script:
         name: test_inline_nightly
+        anchore_version: all
         requires:
-          - build_stateless_nightly
+          - build_inline_nightly
     - push_dockerhub:
-        name: push_stateless_nightly
+        name: push_inline_nightly
+        anchore_version: all
         context: dockerhub
         requires:
           - test_inline_nightly
