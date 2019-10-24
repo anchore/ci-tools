@@ -2,7 +2,7 @@
 
 # Fail on any errors, including in pipelines
 # Don't allow unset variables. Trace all functions with DEBUG trap
-set -euo pipefail -o functrace
+set -exuo pipefail -o functrace
 
 display_usage() {
     echo "${color_yellow}"
@@ -49,7 +49,6 @@ PROJECT_VARS=( \
     "PROJECT_REPONAME=${CIRCLE_PROJECT_REPONAME:=ci-tools}" \
     "WORKING_DIRECTORY=${WORKING_DIRECTORY:=$(eval echo ${CIRCLE_WORKING_DIRECTORY:="${HOME}/tempci_${IMAGE_REPO##*/}_${RANDOM}/project"})}" \
     "WORKSPACE=${WORKSPACE:=$(dirname "$WORKING_DIRECTORY")/workspace}" \
-    "DB_PRELOAD_IMAGE_TAG=${DB_PRELOAD_IMAGE_TAG:-''}"
 )
 # These vars are static & defaults should not need to be changed
 PROJECT_VARS+=( \
@@ -287,12 +286,13 @@ load_image_and_push_dockerhub() {
 build_image() {
     local anchore_version="$1"
     echo "anchore_version=${anchore_version}"
-    if [[ -z "${DB_PRELOAD_IMAGE_TAG}" ]]; then
-        local db_version="${anchore_version}"
+    # if the DB_PRELOAD_IMAGE_TAG variable is set, use it as the engine-db-preload image tag
+    if [[ ! -z "${DB_PRELOAD_IMAGE_TAG+x}" ]]; then
+        local db_version="${DB_PRELOAD_IMAGE_TAG+x}"
     elif [[ "${SLIM_BUILD}" == 'true' ]]; then
         local db_version="${anchore_version}-slim"
     else
-        local db_version="${DB_PRELOAD_IMAGE_TAG}"
+        local db_version="${anchore_version}"
     fi
     docker pull "anchore/engine-db-preload:${db_version}"
 
