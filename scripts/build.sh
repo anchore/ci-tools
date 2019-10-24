@@ -19,14 +19,16 @@ display_usage() {
         WORKING_DIRECTORY = /home/test/workdir - used as a temporary workspace for build/test
         WORKSPACE = /home/test/workspace - used to store temporary artifacts
 
-    Usage: ${0##*/} [ -s ] [ build | test | dev| ci | function_name ] < function_args > < ... > 
+    Usage: ${0##*/} [ -s ] [ build | build_dev |  test | test_dev | test_all | ci | function_name ] < function_args > < ... > 
         
         s - Build slim preloaded image without nvd2 feed data
-        build - Build a dev image tagged IMAGE_REPO:dev'
+        build - Build latest image tagged IMAGE_REPO:dev using latest anchore-engine:latest & engine-db-preload:latest
+        build_dev - Build dev image tagged IMAGE_REPO:dev using anchore-engine:dev & engine-db-preload:dev
         ci - Run mocked CircleCI pipeline using Docker-in-Docker
         function_name - Invoke a function directly using build environment
-        dev - Run test pipeline on latest code locally on your workstation
-        test - Run full ci pipeline locally on your workstation
+        test - Run test pipeline on latest image locally on your workstation
+        test_dev - Run test pipeline on dev image locally on your workstation
+        test_all - Run test pipeline on all images locally on your workstation
 EOF
     echo "${color_normal}"
 }
@@ -117,17 +119,22 @@ main() {
     if [[ "$1" == 'build' ]]; then
         setup_build_environment
         build_image latest
-    # Use the 'dev' param to execute the pipeline locally on just the dev version
-    elif [[ "$1" == 'dev' ]]; then
+    # Use the 'build_dev' param to execute the pipeline locally on just the dev version
+    elif [[ "$1" == 'build_dev' ]]; then
         setup_build_environment
         build_image dev
-    # Use the 'dev_test' param to execute the full pipeline locally on the dev version
-    elif [[ "$1" == 'dev_test' ]]; then
+    # Use the 'test' param to execute the full pipeline locally on latest versions
+    elif [[ "$1" == 'test' ]]; then
         build_and_save_images latest
         test_built_images latest
         load_image_and_push_dockerhub latest
-    # Use the 'test' param to execute the full pipeline locally on all versions
-    elif [[ "$1" == 'test' ]]; then
+    # Use the 'test_dev' param to execute the full pipeline locally on the dev version
+    elif [[ "$1" == 'test_dev' ]]; then
+        build_and_save_images dev
+        test_built_images dev
+        load_image_and_push_dockerhub dev
+    # Use the 'test_all' param to execute the full pipeline locally on all versions
+    elif [[ "$1" == 'test_all' ]]; then
         build_and_save_images
         test_built_images
         load_image_and_push_dockerhub
@@ -184,6 +191,7 @@ cleanup() {
 
 build_and_save_images() {
     local build_version="${1:-all}"
+    echo "build_version=${build_version}"
     setup_build_environment
     # build images for every specified version
     if [[ "${build_version}" == 'all' ]]; then
@@ -212,6 +220,7 @@ build_and_save_images() {
 
 test_built_images() {
     local build_version="${1:-all}"
+    echo "build_version=${build_version}"
     setup_build_environment
     if [[ "${build_version}" == 'all' ]]; then
         for version in ${BUILD_VERSIONS[@]}; do
@@ -220,7 +229,11 @@ test_built_images() {
             export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${version}"
             git reset --hard
             git checkout "tags/${version}" || { if [[ "$CI" == 'false' ]]; then true && local no_tag=true; else exit 1; fi; };
-            test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${version}/scripts/inline_scan"
+            if [[ "${CI}" == 'true' ]]; then
+                test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${version}/scripts/inline_scan"
+            else
+                test_inline_script "${WORKING_DIRECTORY}/scripts/inline_scan"
+            fi
             # Move back to previously checked out branch
             if ! "${no_tag:=false}"; then
                 git reset --hard
@@ -231,8 +244,10 @@ test_built_images() {
     else
         load_image "${build_version}"
         export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev"
-        if [[ "${build_version}" == 'latest' ]]; then
+        if [[ "${build_version}" == 'latest' || "${build_version}" == 'dev' ]] && [[ "${CI}" == 'true' ]] ; then
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${GIT_BRANCH}/scripts/inline_scan"
+        elif [[ "${build_version}" == 'latest' || "${build_version}" == 'dev' ]] && [[ "${CI}" == 'false' ]] ; then
+            test_inline_script "${WORKING_DIRECTORY}/scripts/inline_scan"
         else
             test_inline_script "https://raw.githubusercontent.com/anchore/ci-tools/${build_version}/scripts/inline_scan"
         fi
@@ -241,15 +256,26 @@ test_built_images() {
 
 load_image_and_push_dockerhub() {
     local build_version="${1:-all}"
+    echo "build_version=${build_version}"
     setup_build_environment
     if [[ "${build_version}" == 'all' ]]; then
         for version in ${BUILD_VERSIONS[@]}; do
             load_image "${version}"
-            push_dockerhub "${version}"
+            if [[ "${SLIM_BUILD}" == "true" ]]; then
+                docker tag "${IMAGE_REPO}:dev-${version}" "${IMAGE_REPO}:dev-${version}-slim"
+                push_dockerhub "${version}-slim"
+            else
+                push_dockerhub "${version}"
+            fi
         done
     else
         load_image "${build_version}"
-        push_dockerhub "${build_version}"
+        if [[ "${SLIM_BUILD}" == "true" ]]; then
+            docker tag "${IMAGE_REPO}:dev-${build_version}" "${IMAGE_REPO}:dev-${build_version}-slim"
+            push_dockerhub "${build_version}-slim"
+        else
+            push_dockerhub "${build_version}"
+        fi
     fi
 }
 
@@ -260,8 +286,11 @@ load_image_and_push_dockerhub() {
 
 build_image() {
     local anchore_version="$1"
+    echo "anchore_version=${anchore_version}"
     if [[ -z "${DB_PRELOAD_IMAGE_TAG}" ]]; then
         local db_version="${anchore_version}"
+    elif [[ "${SLIM_BUILD}" == 'true' ]]; then
+        local db_version="${anchore_version}-slim"
     else
         local db_version="${DB_PRELOAD_IMAGE_TAG}"
     fi
@@ -279,6 +308,11 @@ build_image() {
     docker kill "${docker_id}" && docker rm "${docker_id}"
     DOCKER_RUN_IDS+=("${docker_id:0:6}")
     rm -f "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
+
+    docker tag  "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-${anchore_version}"
+    if [[ "${SLIM_BUILD}" == 'true' ]]; then
+        docker tag  "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-${anchore_version}-slim"
+    fi
 }
 
 install_dependencies() {
@@ -288,23 +322,29 @@ install_dependencies() {
 
 test_inline_image() {
     local anchore_version="$1"
+    echo "anchore_version=${anchore_version}"
     export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev"
     cat "${WORKING_DIRECTORY}/scripts/inline_scan" | bash -s -- -p  alpine:latest ubuntu:latest
 }
 
 test_inline_script() {
     local INLINE_URL="$1"
-    curl -s "${INLINE_URL}" | bash -s -- -p  centos:latest
+    if [[ "${INLINE_URL}" =~ 'http' ]]; then
+        local exec_cmd=curl
+    else
+        local exec_cmd=cat
+    fi
+    ${exec_cmd} -s "${INLINE_URL}" | bash -s -- -p  centos:latest
     # test script with dockerfile
     docker pull docker:stable-git
-    curl -s "${INLINE_URL}" | bash -s -- -d ".circleci/Dockerfile" docker:stable-git
+    ${exec_cmd} -s "${INLINE_URL}" | bash -s -- -d ".circleci/Dockerfile" docker:stable-git
     # test script with policy bundle
-    curl -s "${INLINE_URL}" | bash -s -- -p  -t 1500 -b ".circleci/.anchore/policy_bundle.json" "anchore/anchore-engine:latest"
+    ${exec_cmd} -s "${INLINE_URL}" | bash -s -- -p  -t 1500 -b ".circleci/.anchore/policy_bundle.json" "anchore/anchore-engine:latest"
     # test script with policy bundle & dockerfile
     pushd "${WORKING_DIRECTORY}/.circleci/node_critical_pass/"
     docker build -t example.com:5000/ci-test_1/node_critical-pass:latest .
     popd
-    curl -s "${INLINE_URL}" | bash -s -- -t 500 -d ".circleci/node_critical_pass/Dockerfile" -b ".circleci/.anchore/policy_bundle.json" example.com:5000/ci-test_1/node_critical-pass
+    ${exec_cmd} -s "${INLINE_URL}" | bash -s -- -t 500 -d ".circleci/node_critical_pass/Dockerfile" -b ".circleci/.anchore/policy_bundle.json" example.com:5000/ci-test_1/node_critical-pass
 }
 
 
