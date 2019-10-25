@@ -2,7 +2,7 @@
 
 # Fail on any errors, including in pipelines
 # Don't allow unset variables. Trace all functions with DEBUG trap
-set -exuo pipefail -o functrace
+set -eo pipefail -o functrace
 
 display_usage() {
     echo "${color_yellow}"
@@ -19,16 +19,13 @@ display_usage() {
         WORKING_DIRECTORY = /home/test/workdir - used as a temporary workspace for build/test
         WORKSPACE = /home/test/workspace - used to store temporary artifacts
 
-    Usage: ${0##*/} [ -s ] [ build | build_dev |  test | test_dev | test_all | ci | function_name ] < function_args > < ... > 
+    Usage: ${0##*/} [ -s ] [ build | test | ci | function_name ] < build_version >
         
         s - Build slim preloaded image without nvd2 feed data
-        build - Build latest image tagged IMAGE_REPO:dev using latest anchore-engine:latest & engine-db-preload:latest
-        build_dev - Build dev image tagged IMAGE_REPO:dev using anchore-engine:dev & engine-db-preload:dev
+        build - Build image tagged IMAGE_REPO:dev using specified version of anchore-engine & engine-db-preload
+        test - Run test pipeline on specified image version locally on your workstation
         ci - Run mocked CircleCI pipeline using Docker-in-Docker
         function_name - Invoke a function directly using build environment
-        test - Run test pipeline on latest image locally on your workstation
-        test_dev - Run test pipeline on dev image locally on your workstation
-        test_all - Run test pipeline on all images locally on your workstation
 EOF
     echo "${color_normal}"
 }
@@ -117,26 +114,12 @@ main() {
     # Use the 'build' param to build the latest image
     if [[ "$1" == 'build' ]]; then
         setup_build_environment
-        build_image latest
-    # Use the 'build_dev' param to execute the pipeline locally on just the dev version
-    elif [[ "$1" == 'build_dev' ]]; then
-        setup_build_environment
-        build_image dev
+        build_image "${2:-latest}"
     # Use the 'test' param to execute the full pipeline locally on latest versions
     elif [[ "$1" == 'test' ]]; then
-        build_and_save_images latest
-        test_built_images latest
-        load_image_and_push_dockerhub latest
-    # Use the 'test_dev' param to execute the full pipeline locally on the dev version
-    elif [[ "$1" == 'test_dev' ]]; then
-        build_and_save_images dev
-        test_built_images dev
-        load_image_and_push_dockerhub dev
-    # Use the 'test_all' param to execute the full pipeline locally on all versions
-    elif [[ "$1" == 'test_all' ]]; then
-        build_and_save_images
-        test_built_images
-        load_image_and_push_dockerhub
+        build_and_save_images "${2:-dev}"
+        test_built_images "${2:-dev}"
+        load_image_and_push_dockerhub "${2:-dev}"
     # Use the 'ci' param to execute a fully mocked CircleCI pipeline, utilizing docker in docker
     elif [[ "$1" == 'ci' ]]; then
         setup_build_environment
@@ -189,7 +172,7 @@ cleanup() {
 #################################################################
 
 build_and_save_images() {
-    local build_version="${1:-all}"
+    local build_version="$1"
     echo "build_version=${build_version}"
     setup_build_environment
     # build images for every specified version
@@ -211,6 +194,13 @@ build_and_save_images() {
         done
     else
         echo "Buiding ${IMAGE_REPO}:${build_version}"
+        if [[ "${build_version}" == 'latest' ]]; then
+            git reset --hard
+            git checkout "tags/${LATEST_VERSION}"
+        elif [[ ! "${build_version}" == 'dev' ]]; then
+            git reset --hard
+            git checkout "tags/${build_version}"
+        fi
         build_image "${build_version}"
         test_inline_image "${build_version}"
         save_image "${build_version}"
@@ -218,7 +208,7 @@ build_and_save_images() {
 }
 
 test_built_images() {
-    local build_version="${1:-all}"
+    local build_version="$1"
     echo "build_version=${build_version}"
     setup_build_environment
     if [[ "${build_version}" == 'all' ]]; then
@@ -254,27 +244,17 @@ test_built_images() {
 }
 
 load_image_and_push_dockerhub() {
-    local build_version="${1:-all}"
+    local build_version="$1"
     echo "build_version=${build_version}"
     setup_build_environment
     if [[ "${build_version}" == 'all' ]]; then
         for version in ${BUILD_VERSIONS[@]}; do
             load_image "${version}"
-            if [[ "${SLIM_BUILD}" == "true" ]]; then
-                docker tag "${IMAGE_REPO}:dev-${version}" "${IMAGE_REPO}:dev-${version}-slim"
-                push_dockerhub "${version}-slim"
-            else
-                push_dockerhub "${version}"
-            fi
+            push_dockerhub "${version}"
         done
     else
         load_image "${build_version}"
-        if [[ "${SLIM_BUILD}" == "true" ]]; then
-            docker tag "${IMAGE_REPO}:dev-${build_version}" "${IMAGE_REPO}:dev-${build_version}-slim"
-            push_dockerhub "${build_version}-slim"
-        else
-            push_dockerhub "${build_version}"
-        fi
+        push_dockerhub "${build_version}"
     fi
 }
 
@@ -286,18 +266,23 @@ load_image_and_push_dockerhub() {
 build_image() {
     local anchore_version="$1"
     echo "anchore_version=${anchore_version}"
-    # if the DB_PRELOAD_IMAGE_TAG variable is set, use it as the engine-db-preload image tag
-    if [[ ! -z "${DB_PRELOAD_IMAGE_TAG+x}" ]]; then
-        local db_version="${DB_PRELOAD_IMAGE_TAG+x}"
-    elif [[ "${SLIM_BUILD}" == 'true' ]]; then
-        local db_version="${anchore_version}-slim"
+    # if the DB_PRELOAD_IMAGE variable is set, use it as the engine-db-preload image
+    if [[ -z "${DB_PRELOAD_IMAGE}" ]]; then
+        if [[ "${SLIM_BUILD}" == 'true' ]]; then
+            local db_image="anchore/engine-db-preload-slim:${anchore_version}"
+        else
+            local db_image="anchore/engine-db-preload:${anchore_version}"
+        fi
     else
-        local db_version="${anchore_version}"
+        local db_image="${DB_PRELOAD_IMAGE}"
     fi
-    docker pull "anchore/engine-db-preload:${db_version}"
+    if ! docker pull "${db_image}" &>/dev/null && ! docker inspect "${db_image}" &>/dev/null; then
+        db_image="anchore/engine-db-preload:latest"
+        docker pull "${db_image}"
+    fi
 
-    echo "Copying anchore-bootstrap.sql.gz from anchore/engine-db-preload:${db_version} image..."
-    db_preload_id=$(docker run -d --entrypoint tail "docker.io/anchore/engine-db-preload:${db_version}" /dev/null | tail -n1)
+    echo "Copying anchore-bootstrap.sql.gz from ${db_image} image..."
+    db_preload_id=$(docker run -d --entrypoint tail "${db_image}" /dev/null | tail -n1)
     docker cp "${db_preload_id}:/docker-entrypoint-initdb.d/anchore-bootstrap.sql.gz" "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
     DOCKER_RUN_IDS+=("${db_preload_id:0:6}")
 
@@ -310,9 +295,6 @@ build_image() {
     rm -f "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
 
     docker tag  "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-${anchore_version}"
-    if [[ "${SLIM_BUILD}" == 'true' ]]; then
-        docker tag  "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-${anchore_version}-slim"
-    fi
 }
 
 install_dependencies() {
