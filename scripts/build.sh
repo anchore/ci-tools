@@ -371,12 +371,12 @@ push_dockerhub() {
             docker push "${IMAGE_REPO}:latest"
         fi
     else
-        docker tag "${IMAGE_REPO}:dev-${anchore_version}" "anchore/private_testing:${PROJECT_REPONAME}-${anchore_version}"
-        echo "Pushing to DockerHub - anchore/private_testing:${PROJECT_REPONAME}-${anchore_version}"
+        docker tag "${IMAGE_REPO}:dev-${anchore_version}" "anchore/private_testing:${IMAGE_REPO##*/}-${anchore_version}"
+        echo "Pushing to DockerHub - anchore/private_testing:${IMAGE_REPO##*/}-${anchore_version}"
         if [[ "${CI}" == false ]]; then
             sleep 10
         fi
-        docker push "anchore/private_testing:${PROJECT_REPONAME}-${anchore_version}"
+        docker push "anchore/private_testing:${IMAGE_REPO##*/}-${anchore_version}"
     fi
 }
 
