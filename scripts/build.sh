@@ -204,6 +204,10 @@ build_and_save_images() {
         build_image "${build_version}"
         test_inline_image "${build_version}"
         save_image "${build_version}"
+        if [[ ! "${build_version}" == 'dev' ]]; then
+            git reset --hard
+            git checkout @{-1}
+        fi
     fi
 }
 
