@@ -166,8 +166,6 @@ jobs:
 workflows:
   default_workflow:
     jobs:
-    - build_test_push_inline_slim_v051:
-        context: dockerhub
     - build_inline_image:
         name: build_stateless_dev
         anchore_version: dev
