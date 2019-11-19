@@ -4,7 +4,7 @@ Adding a public image scan job to a CircleCi workflow:
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.6.0
+  anchore: anchore/anchore-engine@1.6.2
 workflows:
   scan_image:
     jobs:
@@ -17,7 +17,7 @@ Adding a private image scan job to a CircleCi workflow:
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.6.0
+  anchore: anchore/anchore-engine@1.6.2
 workflows:
   scan_image:
     jobs:
@@ -33,7 +33,7 @@ Adding image scanning to your container build pipeline job.
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.6.0
+  anchore: anchore/anchore-engine@1.6.2
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
@@ -57,7 +57,7 @@ Job will be marked as 'failed' if the Anchore policy evaluation gives 'fail' sta
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.6.0
+  anchore: anchore/anchore-engine@1.6.2
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
@@ -82,7 +82,7 @@ Build and scan multiple images, using a custom policy bundle.
 ```
 version: 2.1
 orbs:
-  anchore: anchore/anchore-engine@1.6.0
+  anchore: anchore/anchore-engine@1.6.2
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
