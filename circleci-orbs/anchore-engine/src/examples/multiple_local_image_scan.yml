@@ -9,7 +9,7 @@ description: |
 usage:
   version: 2.1
   orbs:
-    anchore: anchore/anchore-engine@1.6.1
+    anchore: anchore/anchore-engine@1.6.2
 
   jobs:
     local_image_scan:
