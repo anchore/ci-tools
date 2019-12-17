@@ -106,7 +106,7 @@ jobs:
     - run:
         name: Build and Save Images
         command: scripts/build.sh build_and_save_images << parameters.anchore_version >>
-        no_output_timeout: 30m
+        no_output_timeout: 1h
     - persist_to_workspace:
         root: /home/circleci/workspace/
         paths:
@@ -126,7 +126,7 @@ jobs:
     - run:
         name: Test Inline Script
         command: scripts/build.sh test_built_images << parameters.anchore_version >>
-        no_output_timeout: 30m
+        no_output_timeout: 1h
 
   push_dockerhub:
     parameters:
@@ -142,7 +142,7 @@ jobs:
     - run:
         name: Load & Push Image to DockerHub
         command: scripts/build.sh load_image_and_push_dockerhub << parameters.anchore_version >>
-        no_output_timeout: 30m
+        no_output_timeout: 1h
 
   build_test_push_inline_slim_v051:
     docker:
@@ -153,15 +153,15 @@ jobs:
     - run:
         name: Build and Save Images
         command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s build_and_save_images v0.5.1
-        no_output_timeout: 30m
+        no_output_timeout: 1h
     - run:
         name: Test Inline Script
         command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s test_built_images v0.5.1
-        no_output_timeout: 30m
+        no_output_timeout: 1h
     - run:
         name: Load & Push Image to DockerHub
         command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s load_image_and_push_dockerhub v0.5.1
-        no_output_timeout: 30m
+        no_output_timeout: 1h
 
   build_test_push_inline_slim_v052:
     docker:
@@ -172,15 +172,15 @@ jobs:
     - run:
         name: Build and Save Images
         command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s build_and_save_images v0.5.2
-        no_output_timeout: 30m
+        no_output_timeout: 1h
     - run:
         name: Test Inline Script
         command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s test_built_images v0.5.2
-        no_output_timeout: 30m
+        no_output_timeout: 1h
     - run:
         name: Load & Push Image to DockerHub
         command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s load_image_and_push_dockerhub v0.5.2
-        no_output_timeout: 30m
+        no_output_timeout: 1h
 
   build_test_push_inline_slim_v060:
     docker:
@@ -191,15 +191,15 @@ jobs:
     - run:
         name: Build and Save Images
         command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s build_and_save_images v0.6.0
-        no_output_timeout: 30m
+        no_output_timeout: 1h
     - run:
         name: Test Inline Script
         command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s test_built_images v0.6.0
-        no_output_timeout: 30m
+        no_output_timeout: 1h
     - run:
         name: Load & Push Image to DockerHub
         command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s load_image_and_push_dockerhub v0.6.0
-        no_output_timeout: 30m
+        no_output_timeout: 1h
 
 workflows:
   default_workflow:
