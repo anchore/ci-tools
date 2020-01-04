@@ -3,29 +3,14 @@ attach_workspace: &attach_workspace
   attach_workspace:
     at: /home/circleci/workspace/
 
-filter_dev_orb_integration: &filter_dev_orb_integration
-  branches:
-    ignore: /.*/
-  tags:
-    only: /integration-.*/
-
-filter_dev_orb_branch: &filter_dev_orb_branch
-  branches:
-    only: /orb.*/
-
 filter_semver_tags: &filter_semver_tags
   branches:
     ignore: /.*/
   tags:
     only: /^v[0-9]+(\.[0-9]+)*$/
 
-
 # Start of CircleCI Configuration
 version: 2.1
-orbs:
-  anchore: anchore/anchore-engine@dev:alpha
-  orb-tools: circleci/orb-tools@8.5.0
-
 jobs:
   local_image_scan:
     executor: anchore/anchore_engine
@@ -55,40 +40,6 @@ jobs:
           docker build -t "${CIRCLE_PROJECT_REPONAME}:fail" -f .circleci/node_critical_fail/Dockerfile .circleci/node_critical_fail/
     - anchore/analyze_local_image:
         image_name: "${CIRCLE_PROJECT_REPONAME}:ci ${CIRCLE_PROJECT_REPONAME}:pass ${CIRCLE_PROJECT_REPONAME}:fail"
-    - anchore/parse_reports
-    - store_artifacts:
-        path: anchore-reports
-
-  custom_policy_fail:
-    executor: anchore/anchore_engine
-    steps:
-    - setup_remote_docker
-    - checkout
-    - run:
-        name: build container
-        command: docker build -t "${CIRCLE_PROJECT_REPONAME}:policy_fail" -f .circleci/node_critical_fail/Dockerfile .circleci/node_critical_fail/
-    - anchore/analyze_local_image:
-        image_name: ${CIRCLE_PROJECT_REPONAME}:policy_fail
-        policy_failure: True
-        dockerfile_path: .circleci/node_critical_fail/Dockerfile
-        policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
-    - anchore/parse_reports
-    - store_artifacts:
-        path: anchore-reports
-
-  custom_policy_pass:
-    executor: anchore/anchore_engine
-    steps:
-    - setup_remote_docker
-    - checkout
-    - run:
-        name: build container
-        command: docker build -t "${CIRCLE_PROJECT_REPONAME}:policy_pass" -f .circleci/node_critical_pass/Dockerfile .circleci/node_critical_pass/
-    - anchore/analyze_local_image:
-        image_name: ${CIRCLE_PROJECT_REPONAME}:policy_pass
-        policy_failure: True
-        dockerfile_path: .circleci/node_critical_pass/Dockerfile
-        policy_bundle_file_path: .circleci/.anchore/policy_bundle.json
     - anchore/parse_reports
     - store_artifacts:
         path: anchore-reports
@@ -144,7 +95,11 @@ jobs:
         command: scripts/build.sh load_image_and_push_dockerhub << parameters.anchore_version >>
         no_output_timeout: 1h
 
-  build_test_push_inline_slim_v051:
+  build_test_push_inline_slim:
+    parameters:
+      anchore_version:
+        default: ""
+        type: string
     docker:
       - image: circleci/python:3.6
     steps:
@@ -152,53 +107,15 @@ jobs:
     - checkout
     - run:
         name: Build and Save Images
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s build_and_save_images v0.5.1
+        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s build_and_save_images << parameters.anchore_version >>
         no_output_timeout: 1h
     - run:
         name: Test Inline Script
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s test_built_images v0.5.1
+        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s test_built_images << parameters.anchore_version >>
         no_output_timeout: 1h
     - run:
         name: Load & Push Image to DockerHub
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s load_image_and_push_dockerhub v0.5.1
-        no_output_timeout: 1h
-
-  build_test_push_inline_slim_v052:
-    docker:
-      - image: circleci/python:3.6
-    steps:
-    - setup_remote_docker
-    - checkout
-    - run:
-        name: Build and Save Images
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s build_and_save_images v0.5.2
-        no_output_timeout: 1h
-    - run:
-        name: Test Inline Script
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s test_built_images v0.5.2
-        no_output_timeout: 1h
-    - run:
-        name: Load & Push Image to DockerHub
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s load_image_and_push_dockerhub v0.5.2
-        no_output_timeout: 1h
-
-  build_test_push_inline_slim_v060:
-    docker:
-      - image: circleci/python:3.6
-    steps:
-    - setup_remote_docker
-    - checkout
-    - run:
-        name: Build and Save Images
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s build_and_save_images v0.6.0
-        no_output_timeout: 1h
-    - run:
-        name: Test Inline Script
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s test_built_images v0.6.0
-        no_output_timeout: 1h
-    - run:
-        name: Load & Push Image to DockerHub
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s load_image_and_push_dockerhub v0.6.0
+        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s load_image_and_push_dockerhub << parameters.anchore_version >>
         no_output_timeout: 1h
 
 workflows:
@@ -221,6 +138,9 @@ workflows:
         context: dockerhub
         requires:
           - test_inline_dev
+
+  build_prod_images_on_tag:
+    jobs:
     - build_inline_image:
         name: build_inline_all_versions
         anchore_version: all
@@ -238,84 +158,29 @@ workflows:
         requires:
           - test_inline_all
         filters: *filter_semver_tags
-    - build_test_push_inline_slim_v051:
+    - build_test_push_inline_slim:
+        name: build_test_push_inline_slim_v051
+        anchore_version: v0.5.1
         context: dockerhub
         requires:
           - push_stateless_all
         filters: *filter_semver_tags
-    - build_test_push_inline_slim_v052:
+    - build_test_push_inline_slim:
+        name: build_test_push_inline_slim_v052
+        anchore_version: v0.5.2
         context: dockerhub
         requires:
           - push_stateless_all
         filters: *filter_semver_tags
-    - build_test_push_inline_slim_v060:
+    - build_test_push_inline_slim:
+        name: build_test_push_inline_slim_v060
+        anchore_version: v0.6.0
         context: dockerhub
         requires:
           - push_stateless_all
         filters: *filter_semver_tags
 
-  lint_publish_dev_orb:
-    jobs:
-      - orb-tools/lint:
-          lint-dir: circleci-orbs/anchore-engine/src/
-          filters: *filter_dev_orb_branch
-      - orb-tools/pack:
-          source-dir: circleci-orbs/anchore-engine/src/
-          requires:
-            - orb-tools/lint
-          filters: *filter_dev_orb_branch
-      - orb-tools/publish-dev:
-          context: publish_dev_orb
-          orb-name: anchore/anchore-engine
-          requires:
-            - orb-tools/pack
-          filters: *filter_dev_orb_branch
-      - orb-tools/trigger-integration-workflow:
-          name: trigger-integration-dev
-          context: publish_dev_orb
-          cleanup-tags: true
-          ssh-fingerprints: d3:90:de:4e:fb:1f:ab:6d:77:2a:c5:6c:08:87:9b:c0
-          requires:
-            - orb-tools/publish-dev
-          filters: *filter_dev_orb_branch
-
-  test_dev_orb:
-    jobs:
-    - local_image_scan:
-        filters: *filter_dev_orb_integration
-    - custom_policy_pass:
-        requires:
-          - local_image_scan
-        filters: *filter_dev_orb_integration
-    - local_images_scan:
-        requires:
-          - custom_policy_pass
-        filters: *filter_dev_orb_integration
-    - anchore/image_scan:
-        name: scan_private_image
-        image_name: gcr.io/testing-214322/alpine-test
-        private_registry: true
-        registry_name: gcr.io
-        registry_user: _json_key
-        registry_pass: $_gcr_json_key
-        filters: *filter_dev_orb_integration
-    - anchore/image_scan:
-        image_name: anchore/anchore-engine:latest
-        policy_bundle_file_path: ''
-        timeout: '1200'
-        requires:
-          - scan_private_image
-        filters: *filter_dev_orb_integration
-    - anchore/image_scan:
-        context: dockerhub
-        image_name: anchore/private_testing:anchore-ui-dev
-        private_registry: True
-        timeout: '500'
-        requires:
-          - scan_private_image
-        filters: *filter_dev_orb_integration
-
-  nightly_build_image:
+  nightly_build_slim_images:
     triggers:
       - schedule:
           cron: "0 12 * * *"
@@ -324,12 +189,28 @@ workflows:
               only:
                 - master
     jobs:
-    - build_test_push_inline_slim_v051:
+    - build_test_push_inline_slim:
+        name: build_test_push_inline_slim_v051
+        anchore_version: v0.5.1
         context: dockerhub
-    - build_test_push_inline_slim_v052:
+    - build_test_push_inline_slim:
+        name: build_test_push_inline_slim_v052
+        anchore_version: v0.5.2
         context: dockerhub
-    - build_test_push_inline_slim_v060:
+    - build_test_push_inline_slim:
+        name: build_test_push_inline_slim_v060
+        anchore_version: v0.6.0
         context: dockerhub
+
+  nightly_build_images:
+    triggers:
+      - schedule:
+          cron: "0 12 * * *"
+          filters:
+            branches:
+              only:
+                - master
+    jobs:
     - build_inline_image:
         name: build_inline_nightly
         anchore_version: all
