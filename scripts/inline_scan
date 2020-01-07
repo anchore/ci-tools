@@ -393,11 +393,6 @@ start_vuln_scan() {
         echo
         docker start -ia "${DOCKER_NAME}"
     fi
-
-    if [[ "${r_flag}" ]]; then
-        echo "Copying scan reports from ${DOCKER_NAME} to ${PWD}/anchore-reports/"
-        docker cp "${DOCKER_NAME}:/anchore-engine/anchore-reports/" ./
-    fi
 }
 
 start_analysis() {
@@ -525,6 +520,10 @@ cleanup() {
     for id in ${DOCKER_ID}; do
         local -i timeout=0
         while (docker ps -a | grep "${id:0:10}") > /dev/null && [[ "${timeout}" -lt 12 ]]; do
+            if [[ "${r_flag}" ]]; then
+                echo "Copying scan reports from ${DOCKER_NAME} to ${PWD}/anchore-reports/"
+                docker cp "${DOCKER_NAME}:/anchore-engine/anchore-reports/" ./
+            fi
             docker kill "${id}" &> /dev/null
             docker rm "${id}" &> /dev/null
             printf '\n%s\n' "Cleaning up docker container: ${id}"
