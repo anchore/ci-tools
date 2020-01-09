@@ -1,8 +1,4 @@
 # Define YAML anchors
-attach_workspace: &attach_workspace
-  attach_workspace:
-    at: /home/circleci/workspace/
-
 filter_semver_tags: &filter_semver_tags
   branches:
     ignore: /.*/
@@ -12,39 +8,7 @@ filter_semver_tags: &filter_semver_tags
 # Start of CircleCI Configuration
 version: 2.1
 jobs:
-  local_image_scan:
-    executor: anchore/anchore_engine
-    steps:
-    - setup_remote_docker
-    - checkout
-    - run:
-        name: build container
-        command: docker build -t "${CIRCLE_PROJECT_REPONAME}:ci" -f .circleci/Dockerfile .
-    - anchore/analyze_local_image:
-        image_name: ${CIRCLE_PROJECT_REPONAME}:ci
-        dockerfile_path: .circleci/Dockerfile
-    - anchore/parse_reports
-    - store_artifacts:
-        path: anchore-reports
-
-  local_images_scan:
-    executor: anchore/anchore_engine
-    steps:
-    - setup_remote_docker
-    - checkout
-    - run:
-        name: build container
-        command: |
-          docker build -t "${CIRCLE_PROJECT_REPONAME}:ci" -f .circleci/Dockerfile .
-          docker build -t "${CIRCLE_PROJECT_REPONAME}:pass" -f .circleci/node_critical_pass/Dockerfile .circleci/node_critical_pass/
-          docker build -t "${CIRCLE_PROJECT_REPONAME}:fail" -f .circleci/node_critical_fail/Dockerfile .circleci/node_critical_fail/
-    - anchore/analyze_local_image:
-        image_name: "${CIRCLE_PROJECT_REPONAME}:ci ${CIRCLE_PROJECT_REPONAME}:pass ${CIRCLE_PROJECT_REPONAME}:fail"
-    - anchore/parse_reports
-    - store_artifacts:
-        path: anchore-reports
-
-  build_inline_image:
+  build_test_push_inline_image:
     parameters:
       anchore_version: 
         default: ""
@@ -58,38 +22,10 @@ jobs:
         name: Build and Save Images
         command: scripts/build.sh build_and_save_images << parameters.anchore_version >>
         no_output_timeout: 1h
-    - persist_to_workspace:
-        root: /home/circleci/workspace/
-        paths:
-          - caches/*
-
-  test_inline_script:
-    parameters:
-      anchore_version: 
-        default: ""
-        type: string
-    docker:
-      - image: circleci/python:3.6
-    steps:
-    - setup_remote_docker
-    - checkout
-    - <<: *attach_workspace
     - run:
         name: Test Inline Script
         command: scripts/build.sh test_built_images << parameters.anchore_version >>
         no_output_timeout: 1h
-
-  push_dockerhub:
-    parameters:
-      anchore_version: 
-        default: ""
-        type: string
-    docker:
-      - image: circleci/python:3.6
-    steps:
-    - setup_remote_docker
-    - checkout
-    - <<: *attach_workspace
     - run:
         name: Load & Push Image to DockerHub
         command: scripts/build.sh load_image_and_push_dockerhub << parameters.anchore_version >>
@@ -121,63 +57,22 @@ jobs:
 workflows:
   default_workflow:
     jobs:
-    - build_inline_image:
-        name: build_stateless_dev
-        anchore_version: dev
-        filters:
-          branches:
-            ignore: /orb.*/
-    - test_inline_script:
-        name: test_inline_dev
-        anchore_version: dev
-        requires:
-          - build_stateless_dev
-    - push_dockerhub:
-        name: push_stateless_dev
+    - build_test_push_inline_image:
+        name: build_test_push_inline_image_dev
         anchore_version: dev
         context: dockerhub
-        requires:
-          - test_inline_dev
 
   build_prod_images_on_tag:
     jobs:
-    - build_inline_image:
-        name: build_inline_all_versions
-        anchore_version: all
-        filters: *filter_semver_tags
-    - test_inline_script:
-        name: test_inline_all
-        anchore_version: all
-        requires:
-          - build_inline_all_versions
-        filters: *filter_semver_tags
-    - push_dockerhub:
-        name: push_stateless_all
+    - build_test_push_inline_image:
+        name: build_test_push_inline_image_all
         anchore_version: all
         context: dockerhub
-        requires:
-          - test_inline_all
         filters: *filter_semver_tags
     - build_test_push_inline_slim:
-        name: build_test_push_inline_slim_v051
-        anchore_version: v0.5.1
+        name: build_test_push_inline_slim_all
+        anchore_version: all
         context: dockerhub
-        requires:
-          - push_stateless_all
-        filters: *filter_semver_tags
-    - build_test_push_inline_slim:
-        name: build_test_push_inline_slim_v052
-        anchore_version: v0.5.2
-        context: dockerhub
-        requires:
-          - push_stateless_all
-        filters: *filter_semver_tags
-    - build_test_push_inline_slim:
-        name: build_test_push_inline_slim_v060
-        anchore_version: v0.6.0
-        context: dockerhub
-        requires:
-          - push_stateless_all
         filters: *filter_semver_tags
 
   nightly_build_slim_images:
@@ -211,17 +106,19 @@ workflows:
               only:
                 - master
     jobs:
-    - build_inline_image:
-        name: build_inline_nightly
-        anchore_version: all
-    - test_inline_script:
-        name: test_inline_nightly
-        anchore_version: all
-        requires:
-          - build_inline_nightly
-    - push_dockerhub:
-        name: push_inline_nightly
-        anchore_version: all
+    - build_test_push_inline_image:
+        name: build_test_push_inline_image_v050
+        anchore_version: v0.5.0
         context: dockerhub
-        requires:
-          - test_inline_nightly
+    - build_test_push_inline_image:
+        name: build_test_push_inline_image_v051
+        anchore_version: v0.5.1
+        context: dockerhub
+    - build_test_push_inline_image:
+        name: build_test_push_inline_image_v052
+        anchore_version: v0.5.2
+        context: dockerhub
+    - build_test_push_inline_image:
+        name: build_test_push_inline_image_v060
+        anchore_version: v0.6.0
+        context: dockerhub
