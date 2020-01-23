@@ -10,7 +10,7 @@ version: 2.1
 jobs:
   build_test_push_inline_image:
     parameters:
-      anchore_version: 
+      anchore_version:
         default: ""
         type: string
     docker:
