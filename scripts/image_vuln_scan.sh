@@ -56,21 +56,7 @@ main() {
             exit 1
         fi
     else
-        printf '%s\n\n' "Searching for Docker archive files in /anchore-engine."
-        for i in $(find /anchore-engine -type f); do
-            local file_name="$i"
-            if [[ "${file_name}" =~ [:] ]]; then
-                local new_file_name="/tmp/$(basename ${file_name//:/_})"
-                cp "${file_name}" "${new_file_name}"
-                file_name="${new_file_name}"
-            fi
-            if [[ $(skopeo inspect "docker-archive:${file_name}") ]] && [[ ! "${SCAN_FILES[@]}" =~ "${file_name}" ]]; then 
-                SCAN_FILES+=("$file_name")
-                printf '\t%s\n' "Found docker image archive:  ${file_name}"
-            else 
-                printf '\t%s\n' "Ignoring invalid docker archive:  ${file_name}" >&2
-            fi
-        done
+        find_image_archives
     fi
     echo
 
@@ -162,6 +148,29 @@ get_and_validate_options() {
             exit 1
         fi
     fi
+}
+
+find_image_archives() {
+    printf '%s\n\n' "Searching for Docker archive files in /anchore-engine."
+
+    for i in $(find /anchore-engine -type f); do
+            local file_name="$i"
+            if [[ "${file_name}" =~ .tar ]]; then
+                if [[ "${file_name}" =~ [:] ]]; then
+                    local new_file_name="/tmp/$(basename ${file_name//:/_})"
+                    cp "${file_name}" "${new_file_name}"
+                    file_name="${new_file_name}"
+                fi
+                if [[ $(skopeo inspect "docker-archive:${file_name}") ]] && [[ ! "${SCAN_FILES[@]}" =~ "${file_name}" ]]; then 
+                    SCAN_FILES+=("$file_name")
+                    printf '\t%s\n' "Found docker image archive:  ${file_name}"
+                else 
+                    printf '\t%s\n' "Invalid docker image archive file:  ${file_name}" >&2
+                fi
+            else
+                printf '\t%s\n' "Ignoring non-archive file:  ${file_name}" >&2
+            fi
+        done
 }
 
 prepare_image() {
