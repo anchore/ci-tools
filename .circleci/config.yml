@@ -96,6 +96,10 @@ workflows:
         name: build_test_push_inline_slim_v060
         anchore_version: v0.6.0
         context: dockerhub
+    - build_test_push_inline_slim:
+        name: build_test_push_inline_slim_v061
+        anchore_version: v0.6.1
+        context: dockerhub
 
   nightly_build_images:
     triggers:
@@ -107,10 +111,6 @@ workflows:
                 - master
     jobs:
     - build_test_push_inline_image:
-        name: build_test_push_inline_image_v050
-        anchore_version: v0.5.0
-        context: dockerhub
-    - build_test_push_inline_image:
         name: build_test_push_inline_image_v051
         anchore_version: v0.5.1
         context: dockerhub
@@ -121,4 +121,8 @@ workflows:
     - build_test_push_inline_image:
         name: build_test_push_inline_image_v060
         anchore_version: v0.6.0
+        context: dockerhub
+    - build_test_push_inline_image:
+        name: build_test_push_inline_image_v061
+        anchore_version: v0.6.1
         context: dockerhub
