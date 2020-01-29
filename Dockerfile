@@ -5,6 +5,12 @@ USER root:root
 
 ENV JQ_VERSION=1.6
 ENV GOSU_VERSION=1.11
+# Enable python3 for ubi image
+ENV PATH=/opt/rh/rh-python36/root/usr/bin${PATH:+:${PATH}}
+ENV LD_LIBRARY_PATH=/opt/rh/rh-python36/root/usr/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+ENV MANPATH=/opt/rh/rh-python36/root/usr/share/man:$MANPATH
+ENV PKG_CONFIG_PATH=/opt/rh/rh-python36/root/usr/lib64/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}
+ENV XDG_DATA_DIRS="/opt/rh/rh-python36/root/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 
 RUN set -ex; \
     yum -y upgrade; \

@@ -4,6 +4,21 @@
 # Don't allow unset variables. Trace all functions with DEBUG trap
 set -eo pipefail -o functrace
 
+# Save current working directory for cleanup on exit
+pushd . &> /dev/null
+
+# Setup terminal colors for printing
+export TERM=xterm
+color_red=$(tput setaf 1)
+color_cyan=$(tput setaf 6)
+color_yellow=$(tput setaf 3)
+color_normal=$(tput setaf 9)
+echo
+
+# Trap all signals that cause script to exit & run cleanup function before exiting
+trap 'cleanup' SIGINT SIGTERM ERR EXIT
+trap 'printf "\n%s+ PIPELINE ERROR - exit code %s - cleaning up %s\n" "${color_red}" "$?" "${color_normal}"' SIGINT SIGTERM ERR
+
 display_usage() {
     echo "${color_yellow}"
     cat << EOF
@@ -23,8 +38,8 @@ display_usage() {
         
         s - Build slim preloaded image without nvd2 feed data
         build - Build image tagged IMAGE_REPO:dev using specified version of anchore-engine & engine-db-preload
-        test - Run test pipeline on specified image version locally on your workstation
-        ci - Run mocked CircleCI pipeline using Docker-in-Docker
+        test - Build image and ensure it starts up correctly
+        ci - Run full pipeline
         function_name - Invoke a function directly using build environment
 EOF
     echo "${color_normal}"
@@ -54,7 +69,6 @@ PROJECT_VARS+=( \
     "SKIP_FINAL_CLEANUP=${SKIP_FINAL_CLEANUP:=false}" \
 )
 
-
 ########################################
 ###   MAIN PROGRAM BOOTSTRAP LOGIC   ###
 ########################################
@@ -79,33 +93,6 @@ main() {
     PROJECT_VARS+=( \
         "SLIM_BUILD=${s_flag:=false}" \
     )
-
-    # Save current working directory for cleanup on exit
-    pushd . &> /dev/null
-
-    # Trap all signals that cause script to exit & run cleanup function before exiting
-    trap 'cleanup' SIGINT SIGTERM ERR EXIT
-    trap 'printf "\n%s+ PIPELINE ERROR - exit code %s - cleaning up %s\n" "${color_red}" "$?" "${color_normal}"' SIGINT SIGTERM ERR
-
-    # Get ci_utils.sh from anchore test-infra repo - used for common functions
-    # If running on test-infra container ci_utils.sh is installed to /usr/local/bin/
-    # if [[ -f /usr/local/bin/ci_utils.sh ]]; then
-    #     source ci_utils.sh
-    # elif [[ -f "${WORKSPACE}/test-infra/scripts/ci_utils.sh" ]]; then
-    #     source "${WORKSPACE}/test-infra/scripts/ci_utils.sh"
-    # else
-    #     git clone https://github.com/anchore/test-infra "${WORKSPACE}/test-infra"
-    #     source "${WORKSPACE}/test-infra/scripts/ci_utils.sh"
-    # fi
-
-    # Setup terminal colors for printing
-    export TERM=xterm
-    color_red=$(tput setaf 1)
-    color_cyan=$(tput setaf 6)
-    color_yellow=$(tput setaf 3)
-    color_normal=$(tput setaf 9)
-    echo
-
     setup_and_print_env_vars
 
     # Trap all bash commands & print to screen. Like using set -v but allows printing in color
@@ -117,15 +104,14 @@ main() {
         build_image "${2:-latest}"
     # Use the 'test' param to execute the full pipeline locally on latest versions
     elif [[ "$1" == 'test' ]]; then
+        setup_build_environment
+        build_image "${2:-dev}"
+        check_image_status
+    # Use the 'ci' param to execute a fully mocked CircleCI pipeline, utilizing docker in docker
+    elif [[ "$1" == 'ci' ]]; then
         build_and_save_images "${2:-dev}"
         test_built_images "${2:-dev}"
         load_image_and_push_dockerhub "${2:-dev}"
-    # Use the 'ci' param to execute a fully mocked CircleCI pipeline, utilizing docker in docker
-    elif [[ "$1" == 'ci' ]]; then
-        setup_build_environment
-        ci_test_job 'docker.io/anchore/test-infra:latest' 'build_and_save_images'
-        ci_test_job 'docker.io/anchore/test-infra:latest' 'test_built_images'
-        ci_test_job 'docker.io/anchore/test-infra:latest' 'load_image_and_push_dockerhub'
     else
         # If first param is a valid function name, execute the function & pass all following params to function
         export SKIP_FINAL_CLEANUP=true
@@ -183,6 +169,7 @@ build_and_save_images() {
             # exit script if tag does not exist
             git checkout "tags/${version}" || { if [[ "${CI}" == 'false' ]]; then true && local no_tag=true; else exit 1; fi; };
             build_image "${version}"
+            check_image_status
             test_inline_image "${version}"
             save_image "${version}"
             # Move back to previously checked out branch
@@ -202,6 +189,7 @@ build_and_save_images() {
             git checkout "tags/${build_version}"
         fi
         build_image "${build_version}"
+        check_image_status
         test_inline_image "${build_version}"
         save_image "${build_version}"
         if [[ ! "${build_version}" == 'dev' ]]; then
@@ -291,14 +279,17 @@ build_image() {
     DOCKER_RUN_IDS+=("${db_preload_id:0:6}")
 
     docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
+    rm -f "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
+
+    docker tag  "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-${anchore_version}"
+}
+
+check_image_status() {
     local docker_name="${RANDOM:-temp}-db-preload"
     docker run -it --name "${docker_name}" "${IMAGE_REPO}:dev" debug /bin/bash -c "anchore-cli system wait --feedsready 'vulnerabilities' && anchore-cli system status && anchore-cli system feeds list"
     local docker_id=$(docker inspect ${docker_name} | jq '.[].Id')
     docker kill "${docker_id}" && docker rm "${docker_id}"
     DOCKER_RUN_IDS+=("${docker_id:0:6}")
-    rm -f "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
-
-    docker tag  "${IMAGE_REPO}:dev" "${IMAGE_REPO}:dev-${anchore_version}"
 }
 
 install_dependencies() {
@@ -337,21 +328,6 @@ test_inline_script() {
 ########################################################
 ###   COMMON HELPER FUNCTIONS - ALPHABETICAL ORDER   ###
 ########################################################
-
-ci_test_job() {
-    local ci_image=$1
-    local ci_function=$2
-    local docker_name="${RANDOM:-TEMP}-ci-test"
-    docker run --net host -it --name "${docker_name}" -v $(dirname "${WORKING_DIRECTORY}"):$(dirname "${WORKING_DIRECTORY}"):delegated -v /var/run/docker.sock:/var/run/docker.sock "${ci_image}" /bin/sh -c "\
-        cd $(dirname "${WORKING_DIRECTORY}") && \
-        cp ${WORKING_DIRECTORY}/scripts/build.sh $(dirname "${WORKING_DIRECTORY}")/build.sh && \
-        export WORKING_DIRECTORY=${WORKING_DIRECTORY} && \
-        sudo -E bash $(dirname "${WORKING_DIRECTORY}")/build.sh ${ci_function} \
-    "
-    local docker_id=$(docker inspect ${docker_name} | jq '.[].Id')
-    docker kill "${docker_id}" && docker rm "${docker_id}"
-    DOCKER_RUN_IDS+=("${docker_id:0:6}")
-}
 
 load_image() {
     local anchore_version="$1"

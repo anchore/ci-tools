@@ -62,7 +62,10 @@ main() {
 
     if [[ "${#SCAN_FILES[@]}" -gt 0 ]]; then
         for file in "${SCAN_FILES[@]}"; do
-            prepare_image "${file}"
+            local image_name="$(prepare_image_name ${file})"
+            printf '%s\n' "Starting analysis of -- ${image_name##*/}"
+            copy_image "${file}" "${image_name}"
+            start_scan "${file}" "${image_name}"
         done
     else
         printf '\n\t%s\n\n' "ERROR - No valid docker archives provided." >&2
@@ -70,11 +73,13 @@ main() {
         exit 1
     fi
 
+    # add & activate custom policy bundle
     if [[ "${b_flag}" ]]; then
         (anchore-cli --json policy add "${POLICY_BUNDLE}" | jq '.policyId' | xargs anchore-cli policy activate) || \
             printf "\n%s\n" "Unable to activate policy bundle - ${POLICY_BUNDLE} -- using default policy bundle." >&2
     fi
 
+    # create reports and save to working dir
     if [[ "${#FINISHED_IMAGES[@]}" -ge 1 ]]; then
         if [[ "${r_flag}" ]]; then
             for image in "${FINISHED_IMAGES[@]}"; do
@@ -88,6 +93,7 @@ main() {
             (set +o pipefail; anchore-cli evaluate check "${image}" --detail | tee /dev/null; set -o pipefail)
         done
 
+        # perform evaluation
         if [[ "${f_flag}" ]]; then
             for image in "${FINISHED_IMAGES[@]}"; do
                 anchore-cli evaluate check "${image}"
@@ -151,8 +157,6 @@ get_and_validate_options() {
 }
 
 find_image_archives() {
-    printf '%s\n\n' "Searching for Docker archive files in /anchore-engine."
-
     for i in $(find /anchore-engine -type f); do
             local file_name="$i"
             if [[ "${file_name}" =~ .tar ]]; then
@@ -163,17 +167,14 @@ find_image_archives() {
                 fi
                 if [[ $(skopeo inspect "docker-archive:${file_name}") ]] && [[ ! "${SCAN_FILES[@]}" =~ "${file_name}" ]]; then 
                     SCAN_FILES+=("$file_name")
-                    printf '\t%s\n' "Found docker image archive:  ${file_name}"
                 else 
-                    printf '\t%s\n' "Invalid docker image archive file:  ${file_name}" >&2
+                    printf '\t%s\n' "ERROR - Invalid docker image archive file:  ${file_name}" >&2
                 fi
-            else
-                printf '\t%s\n' "Ignoring non-archive file:  ${file_name}" >&2
             fi
         done
 }
 
-prepare_image() {
+prepare_image_name() {
     local file="$1"
 
     if [[ -z "${IMAGE_NAME##*/}" ]]; then
@@ -196,15 +197,17 @@ prepare_image() {
         exit 1
     fi
 
-    local anchore_image_name="${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"    
-    printf '%s\n\n' "Preparing ${IMAGE_NAME} for analysis"
+    local anchore_image_name="${ANCHORE_ENDPOINT_HOSTNAME}:5000/${image_repo}:${image_tag}"
+    echo "${anchore_image_name}"
+}
+
+copy_image() {
+    local file="$1"
+    local anchore_image_name="$2"
     # pass to background process & wait, required to handle keyboard interrupt when running container non-interactively.
     skopeo copy --dest-tls-verify=false "docker-archive:${file}" "docker://${anchore_image_name}" &
     wait_proc="$!"
     wait "${wait_proc}"
-    printf '\n%s\n' "Image archive loaded into Anchore Engine using tag -- ${anchore_image_name#*/}"
-
-    start_scan "${file}" "${anchore_image_name}"
 }
 
 start_scan() {

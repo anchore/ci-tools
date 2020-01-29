@@ -113,7 +113,7 @@ main() {
     fi
     if [[ "$1" == 'help' ]]; then
         display_usage >&2
-	exit 1
+        exit 1
     elif [[ "$1" == 'analyze' ]]; then
         shift "$((OPTIND))"
         ANALYZE=true
@@ -440,11 +440,10 @@ start_analysis() {
     save_and_copy_images
     echo
     docker start -ia "${DOCKER_NAME}"
-    
+
     local analysis_archive_name="${IMAGE_FILES[*]%.tar}-archive.tgz"
     # copy image analysis archive from inline_scan containter to host & curl to remote anchore-engine endpoint
     docker cp "${DOCKER_NAME}:/anchore-engine/image-analysis-archive.tgz" "/tmp/anchore/${analysis_archive_name}"
-    
     if [[ -f "/tmp/anchore/${analysis_archive_name}" ]]; then
         printf '%s\n' " Analysis complete!"
         printf '\n%s\n' "Sending analysis archive to ${ANCHORE_URL%%/}"
@@ -473,7 +472,7 @@ save_and_copy_images() {
     # Save all image files to /tmp and copy to created container
     for image in "${SCAN_IMAGES[@]}"; do
         local base_image_name="${image##*/}"
-        echo "Saving ${image} for local analysis"
+
         local save_file_name="${base_image_name}.tar"
         # IMAGE_FILES is used for storing temp image paths for cleanup at end of script
         IMAGE_FILES+=("$save_file_name")
@@ -490,7 +489,6 @@ save_and_copy_images() {
 
         if [[ -f "${save_file_path}" ]]; then
             chmod +r "${save_file_path}"
-            printf '%s' "Successfully prepared image archive -- ${save_file_path}"
         else
             printf '\n\t%s\n\n' "ERROR - unable to save docker image to ${save_file_path}." >&2
             display_usage >&2
@@ -526,7 +524,6 @@ cleanup() {
             fi
             docker kill "${id}" &> /dev/null
             docker rm "${id}" &> /dev/null
-            printf '\n%s\n' "Cleaning up docker container: ${id}"
             ((timeout=timeout+1))
             sleep 5
         done
