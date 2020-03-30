@@ -35,8 +35,8 @@ EOF
 ##############################################
 
 # Specify what versions to build & what version should get 'latest' tag
-export BUILD_VERSIONS=('v0.6.1' 'v0.6.0' 'v0.5.2' 'v0.5.1')
-export LATEST_VERSION='v0.6.1'
+export BUILD_VERSIONS=('v0.7.0' 'v0.6.1' 'v0.6.0' 'v0.5.2')
+export LATEST_VERSION='v0.7.0'
 
 # PROJECT_VARS are custom vars that are modified between projects
 # Expand all required ENV vars or set to default values with := variable substitution
@@ -290,7 +290,11 @@ build_image() {
     docker cp "${db_preload_id}:/docker-entrypoint-initdb.d/anchore-bootstrap.sql.gz" "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
     DOCKER_RUN_IDS+=("${db_preload_id:0:6}")
 
-    docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
+    if [[ "${anchore_version}" == "dev" ]]; then
+        docker build --build-arg "ANCHORE_REPO=anchore/anchore-engine-dev" --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
+    else
+        docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
+    fi
     local docker_name="${RANDOM:-temp}-db-preload"
     docker run -it --name "${docker_name}" "${IMAGE_REPO}:dev" debug /bin/bash -c "anchore-cli system wait --feedsready 'vulnerabilities' && anchore-cli system status && anchore-cli system feeds list"
     local docker_id=$(docker inspect ${docker_name} | jq '.[].Id')
