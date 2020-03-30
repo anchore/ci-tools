@@ -20,18 +20,19 @@ feeds:
     # If enabled only sync specific feeds instead of all.
     enabled: True
     feeds:
+      github: True
       vulnerabilities: True
       # Warning: enabling the packages and nvd sync causes the service to require much
       #   more memory to do process the significant data volume. We recommend at least 4GB available for the container
       packages: False
-      nvd: True
+      nvdv2: True
   anonymous_user_username: anon@ancho.re
   anonymous_user_password: pbiU2RYZ2XrmYQ
   url: 'https://ancho.re/v1/service/feeds'
   client_url: 'https://ancho.re/v1/account/users'
   token_url: 'https://ancho.re/oauth/token'
   connection_timeout_seconds: 3
-  read_timeout_seconds: 60
+  read_timeout_seconds: 180
 
 
 # Can be omitted and will default to 'foobar' on db initialization

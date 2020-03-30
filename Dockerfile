@@ -1,5 +1,6 @@
+ARG ANCHORE_REPO="anchore/anchore-engine"
 ARG ANCHORE_VERSION="latest"
-FROM anchore/anchore-engine:${ANCHORE_VERSION}
+FROM ${ANCHORE_REPO}:${ANCHORE_VERSION}
 
 USER root:root
 
@@ -29,9 +30,7 @@ ENV PG_MAJOR="9.6"
 ENV PGDATA="/var/lib/postgresql/data"
 
 RUN set -eux; \
-    #yum install -y  https://download.postgresql.org/pub/repos/yum/9.6/redhat/rhel-7-x86_64/pgdg-redhat96-9.6-3.noarch.rpm; \
-    #yum install -y https://download.postgresql.org/pub/repos/yum/9.6/redhat/rhel-7-x86_64/pgdg-redhat-repo-42.0-4.noarch.rpm; \
-    yum install -y https://download.postgresql.org/pub/repos/yum/9.6/redhat/rhel-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm; \
+    yum install -y https://download.postgresql.org/pub/repos/yum/9.6/redhat/rhel-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm; \
     yum install -y postgresql96 postgresql96-server
 
 RUN set -eux; \
