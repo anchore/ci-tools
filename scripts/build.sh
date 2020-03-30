@@ -291,7 +291,7 @@ build_image() {
     DOCKER_RUN_IDS+=("${db_preload_id:0:6}")
 
     if [[ "${anchore_version}" == "dev" ]]; then
-        docker build --build-arg "ANCHORE_REPO=anchore/anchore-engine-dev" --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
+        docker build --build-arg "ANCHORE_REPO=anchore/anchore-engine-dev" --build-arg "ANCHORE_VERSION=latest" -t "${IMAGE_REPO}:dev" .
     else
         docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
     fi
