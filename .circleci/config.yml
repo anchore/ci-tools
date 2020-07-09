@@ -16,20 +16,20 @@ jobs:
     docker:
       - image: circleci/python:3.6
     steps:
-    - setup_remote_docker
-    - checkout
-    - run:
-        name: Build and Save Images
-        command: scripts/build.sh build_and_save_images << parameters.anchore_version >>
-        no_output_timeout: 1h
-    - run:
-        name: Test Inline Script
-        command: scripts/build.sh test_built_images << parameters.anchore_version >>
-        no_output_timeout: 1h
-    - run:
-        name: Load & Push Image to DockerHub
-        command: scripts/build.sh load_image_and_push_dockerhub << parameters.anchore_version >>
-        no_output_timeout: 1h
+      - setup_remote_docker
+      - checkout
+      - run:
+          name: Build and Save Images
+          command: scripts/build.sh build_and_save_images << parameters.anchore_version >>
+          no_output_timeout: 1h
+      - run:
+          name: Test Inline Script
+          command: scripts/build.sh test_built_images << parameters.anchore_version >>
+          no_output_timeout: 1h
+      - run:
+          name: Load & Push Image to DockerHub
+          command: scripts/build.sh load_image_and_push_dockerhub << parameters.anchore_version >>
+          no_output_timeout: 1h
 
   build_test_push_inline_slim:
     parameters:
@@ -39,41 +39,62 @@ jobs:
     docker:
       - image: circleci/python:3.6
     steps:
-    - setup_remote_docker
-    - checkout
-    - run:
-        name: Build and Save Images
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s build_and_save_images << parameters.anchore_version >>
-        no_output_timeout: 1h
-    - run:
-        name: Test Inline Script
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s test_built_images << parameters.anchore_version >>
-        no_output_timeout: 1h
-    - run:
-        name: Load & Push Image to DockerHub
-        command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s load_image_and_push_dockerhub << parameters.anchore_version >>
-        no_output_timeout: 1h
+      - setup_remote_docker
+      - checkout
+      - run:
+          name: Build and Save Images
+          command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s build_and_save_images << parameters.anchore_version >>
+          no_output_timeout: 1h
+      - run:
+          name: Test Inline Script
+          command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s test_built_images << parameters.anchore_version >>
+          no_output_timeout: 1h
+      - run:
+          name: Load & Push Image to DockerHub
+          command: IMAGE_REPO=docker.io/anchore/inline-scan-slim scripts/build.sh -s load_image_and_push_dockerhub << parameters.anchore_version >>
+          no_output_timeout: 1h
+
+  push_inline_scan_script:
+    docker:
+      - image: circleci/python:3.6
+    steps:
+      - checkout
+      - run:
+          name: Install awscli
+          command: |
+            pip install --upgrade awscli
+      - run:
+          name: Copy inline_scan script to s3
+          command: |
+            aws s3 cp ./scripts/inline_scan s3://ci-tools.anchore.io/inline_scan-"${CIRCLE_TAG}" --acl public-read
+            aws s3 cp ./scripts/inline_scan s3://ci-tools.anchore.io/inline_scan-latest --acl public-read
 
 workflows:
   default_workflow:
     jobs:
-    - build_test_push_inline_image:
-        name: build_test_push_inline_image_dev
-        anchore_version: dev
-        context: dockerhub
+      - build_test_push_inline_image:
+          name: build_test_push_inline_image_dev
+          anchore_version: dev
+          context: dockerhub
 
   build_prod_images_on_tag:
     jobs:
-    - build_test_push_inline_image:
-        name: build_test_push_inline_image_all
-        anchore_version: all
-        context: dockerhub
-        filters: *filter_semver_tags
-    - build_test_push_inline_slim:
-        name: build_test_push_inline_slim_all
-        anchore_version: all
-        context: dockerhub
-        filters: *filter_semver_tags
+      - build_test_push_inline_image:
+          name: build_test_push_inline_image_all
+          anchore_version: all
+          context: dockerhub
+          filters: *filter_semver_tags
+      - build_test_push_inline_slim:
+          name: build_test_push_inline_slim_all
+          anchore_version: all
+          context: dockerhub
+          filters: *filter_semver_tags
+      - push_inline_scan_script:
+          context: aws-prod
+          filters: *filter_semver_tags
+          requires:
+            - build_test_push_inline_image_all
+            - build_test_push_inline_slim_all
 
   nightly_build_slim_images:
     triggers:
@@ -84,26 +105,26 @@ workflows:
               only:
                 - master
     jobs:
-    - build_test_push_inline_slim:
-        name: build_test_push_inline_slim_v061
-        anchore_version: v0.6.1
-        context: dockerhub
-    - build_test_push_inline_slim:
-        name: build_test_push_inline_slim_v070
-        anchore_version: v0.7.0
-        context: dockerhub
-    - build_test_push_inline_slim:
-        name: build_test_push_inline_slim_v071
-        anchore_version: v0.7.1
-        context: dockerhub
-    - build_test_push_inline_slim:
-        name: build_test_push_inline_slim_v072
-        anchore_version: v0.7.2
-        context: dockerhub
-    - build_test_push_inline_slim:
-        name: build_test_push_inline_slim_v073
-        anchore_version: v0.7.3
-        context: dockerhub
+      - build_test_push_inline_slim:
+          name: build_test_push_inline_slim_v061
+          anchore_version: v0.6.1
+          context: dockerhub
+      - build_test_push_inline_slim:
+          name: build_test_push_inline_slim_v070
+          anchore_version: v0.7.0
+          context: dockerhub
+      - build_test_push_inline_slim:
+          name: build_test_push_inline_slim_v071
+          anchore_version: v0.7.1
+          context: dockerhub
+      - build_test_push_inline_slim:
+          name: build_test_push_inline_slim_v072
+          anchore_version: v0.7.2
+          context: dockerhub
+      - build_test_push_inline_slim:
+          name: build_test_push_inline_slim_v073
+          anchore_version: v0.7.3
+          context: dockerhub
 
   nightly_build_images:
     triggers:
@@ -114,23 +135,23 @@ workflows:
               only:
                 - master
     jobs:
-    - build_test_push_inline_image:
-        name: build_test_push_inline_image_v061
-        anchore_version: v0.6.1
-        context: dockerhub
-    - build_test_push_inline_image:
-        name: build_test_push_inline_image_v070
-        anchore_version: v0.7.0
-        context: dockerhub
-    - build_test_push_inline_image:
-        name: build_test_push_inline_image_v071
-        anchore_version: v0.7.1
-        context: dockerhub
-    - build_test_push_inline_image:
-        name: build_test_push_inline_image_v072
-        anchore_version: v0.7.2
-        context: dockerhub
-    - build_test_push_inline_image:
-        name: build_test_push_inline_image_v073
-        anchore_version: v0.7.3
-        context: dockerhub
+      - build_test_push_inline_image:
+          name: build_test_push_inline_image_v061
+          anchore_version: v0.6.1
+          context: dockerhub
+      - build_test_push_inline_image:
+          name: build_test_push_inline_image_v070
+          anchore_version: v0.7.0
+          context: dockerhub
+      - build_test_push_inline_image:
+          name: build_test_push_inline_image_v071
+          anchore_version: v0.7.1
+          context: dockerhub
+      - build_test_push_inline_image:
+          name: build_test_push_inline_image_v072
+          anchore_version: v0.7.2
+          context: dockerhub
+      - build_test_push_inline_image:
+          name: build_test_push_inline_image_v073
+          anchore_version: v0.7.3
+          context: dockerhub
