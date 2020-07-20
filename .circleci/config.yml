@@ -125,16 +125,6 @@ workflows:
           name: build_test_push_inline_slim_v073
           anchore_version: v0.7.3
           context: dockerhub
-
-  nightly_build_images:
-    triggers:
-      - schedule:
-          cron: "0 12 * * *"
-          filters:
-            branches:
-              only:
-                - master
-    jobs:
       - build_test_push_inline_image:
           name: build_test_push_inline_image_v061
           anchore_version: v0.6.1
