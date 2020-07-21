@@ -96,7 +96,7 @@ workflows:
             - build_test_push_inline_image_all
             - build_test_push_inline_slim_all
 
-  nightly_build_slim_images:
+  nightly_build_images:
     triggers:
       - schedule:
           cron: "0 12 * * *"
