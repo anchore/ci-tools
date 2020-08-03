@@ -27,7 +27,7 @@ pipeline {
       environment {
         ANCHORE_ENGINE_URL = "http://192.168.1.146:8228/v1"
         ANCHORE_ENGINE_CREDENTIALS = credentials('anchore-engine-credentials') // Jenkins credentials reference
-        ANCHORE_ENGINE_POLICY_BUNDLE_ID = "" // if left blank, anchore engine defaults to active bundle for policy evaluation
+        ANCHORE_ENGINE_POLICY_POLICY_ID = "" // if left blank, anchore engine defaults to active bundle for policy evaluation
         ANCHORE_ENGINE_ANALYSIS_TIMEOUT_MINUTES = 5 // time in minutes to wait for analysis to complete
         ANCHORE_ENGINE_SLEEP_SECONDS = 5 // wait time in seconds between retries
         ANCHORE_ENGINE_VULNERABILITIES = "anchore_vulnerabilities_report.json"
@@ -110,7 +110,7 @@ pipeline {
             echo "Fetching policy evaluation"
             output = "${ANCHORE_ENGINE_POLICY_EVALUATION}"
             try { // check for environment variable. this is hacky but there does not seem to be a better way for checking environment variables
-              cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/check?bundle_id=${ANCHORE_ENGINE_POLICY_BUNDLE_ID}&tag=${TAG_TO_BE_ANALYZED}&detail=true'"
+              cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/check?policyId=${ANCHORE_ENGINE_POLICY_POLICY_ID}&tag=${TAG_TO_BE_ANALYZED}&detail=true'"
             } catch (e) {
               cmd = "${curler} -o ${output} -X GET '${ANCHORE_ENGINE_URL}/images/${image_digest}/check?tag=${TAG_TO_BE_ANALYZED}&detail=true'"
             }
