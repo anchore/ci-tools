@@ -106,10 +106,6 @@ workflows:
                 - master
     jobs:
       - build_test_push_inline_slim:
-          name: build_test_push_inline_slim_v061
-          anchore_version: v0.6.1
-          context: dockerhub
-      - build_test_push_inline_slim:
           name: build_test_push_inline_slim_v070
           anchore_version: v0.7.0
           context: dockerhub
@@ -125,9 +121,9 @@ workflows:
           name: build_test_push_inline_slim_v073
           anchore_version: v0.7.3
           context: dockerhub
-      - build_test_push_inline_image:
-          name: build_test_push_inline_image_v061
-          anchore_version: v0.6.1
+      - build_test_push_inline_slim:
+          name: build_test_push_inline_slim_v080
+          anchore_version: v0.8.0
           context: dockerhub
       - build_test_push_inline_image:
           name: build_test_push_inline_image_v070
@@ -144,4 +140,8 @@ workflows:
       - build_test_push_inline_image:
           name: build_test_push_inline_image_v073
           anchore_version: v0.7.3
+          context: dockerhub
+      - build_test_push_inline_image:
+          name: build_test_push_inline_image_v080
+          anchore_version: v0.8.0
           context: dockerhub
