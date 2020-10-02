@@ -382,9 +382,13 @@ start_vuln_scan() {
             CREATE_CMD+=('-b "${POLICY_BUNDLE}"')
             COPY_CMDS+=('docker cp "${POLICY_BUNDLE}" "${DOCKER_NAME}:/anchore-engine/$(basename ${POLICY_BUNDLE})";')
         fi
-        if [[ "${d_flag}" ]] && [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
-            CREATE_CMD+=('-d "${DOCKERFILE}" -i "${SCAN_IMAGES[*]}"')
-            COPY_CMDS+=('docker cp "${DOCKERFILE}" "${DOCKER_NAME}:/anchore-engine/$(basename ${DOCKERFILE})";')
+        if [[ "${#SCAN_IMAGES[@]}" -eq 1 ]]; then
+	    if [[ "${d_flag}" ]]; then
+                CREATE_CMD+=('-d "${DOCKERFILE}" -i "${SCAN_IMAGES[*]}"')
+                COPY_CMDS+=('docker cp "${DOCKERFILE}" "${DOCKER_NAME}:/anchore-engine/$(basename ${DOCKERFILE})";')
+	    else
+	        CREATE_CMD+=('-i "${SCAN_IMAGES[*]}"')
+	    fi
         fi
 
         DOCKER_ID=$(eval "${CREATE_CMD[*]}")
