@@ -386,9 +386,9 @@ start_vuln_scan() {
 	    if [[ "${d_flag}" ]]; then
                 CREATE_CMD+=('-d "${DOCKERFILE}" -i "${SCAN_IMAGES[*]}"')
                 COPY_CMDS+=('docker cp "${DOCKERFILE}" "${DOCKER_NAME}:/anchore-engine/$(basename ${DOCKERFILE})";')
-	    fi
 	    else
 	        CREATE_CMD+=('-i "${SCAN_IMAGES[*]}"')
+	    fi
         fi
 
         DOCKER_ID=$(eval "${CREATE_CMD[*]}")
