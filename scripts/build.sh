@@ -292,6 +292,8 @@ build_image() {
 
     if [[ "${anchore_version}" == "dev" ]]; then
         docker build --build-arg "ANCHORE_REPO=anchore/anchore-engine-dev" --build-arg "ANCHORE_VERSION=latest" -t "${IMAGE_REPO}:dev" .
+    elif [[ "${anchore_version}" == "issue-712" ]]; then
+        docker build --build-arg "ANCHORE_REPO=anchore/anchore-engine-dev" --build-arg "ANCHORE_VERSION=issue-712" -t "${IMAGE_REPO}:dev" .
     else
         docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
     fi
