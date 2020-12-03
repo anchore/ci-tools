@@ -35,7 +35,7 @@ EOF
 ##############################################
 
 # Specify what versions to build & what version should get 'latest' tag
-export BUILD_VERSIONS=('v0.8.2' 'v0.8.1' 'v0.8.0' 'v0.7.3' 'v0.7.2')
+export BUILD_VERSIONS=('v0.8.2' 'v0.8.1' 'v0.8.0' 'v0.7.3' 'v0.7.2' 'issue-712')
 export LATEST_VERSION='v0.8.2'
 
 # PROJECT_VARS are custom vars that are modified between projects
