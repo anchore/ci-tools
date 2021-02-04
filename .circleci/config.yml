@@ -99,8 +99,7 @@ workflows:
   nightly_build:
     triggers:
       - schedule:
-        # cron: "0 12 * * *"
-          cron: "40 18 * * *"
+          cron: "0 12 * * *"
           filters:
             branches:
               only:
@@ -147,7 +146,7 @@ workflows:
           anchore_version: v0.9.0
           context: dockerhub
       - build_test_push_inline_image:
-          name: build_test_push_inline_image_v09
+          name: build_test_push_inline_image_v091
           anchore_version: v0.9.1
           context: dockerhub
       - build_test_push_inline_image:
