@@ -30,8 +30,8 @@ ENV PG_MAJOR="9.6"
 ENV PGDATA="/var/lib/postgresql/data"
 
 RUN set -eux; \
-    yum install -y https://download.postgresql.org/pub/repos/yum/9.6/redhat/rhel-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm; \
-    yum install -y postgresql96 postgresql96-server
+    yum install -y --disablerepo pgdg94 https://download.postgresql.org/pub/repos/yum/9.6/redhat/rhel-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm; \
+    yum install -y --disablerepo pgdg94 postgresql96 postgresql96-server
 
 RUN set -eux; \
     mkdir -p /var/lib/postgresql; \
