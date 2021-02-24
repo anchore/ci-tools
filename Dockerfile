@@ -20,18 +20,18 @@ RUN set -ex; \
     gpg --batch --import /usr/local/bin/jq-public.asc; \
     gpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu; \
     gpg --batch --verify /usr/local/bin/jq.asc /usr/local/bin/jq; \
-	command -v gpgconf && gpgconf --kill all || :; \
+    command -v gpgconf && gpgconf --kill all || :; \
     chmod +x /usr/local/bin/jq; \
     chmod +x /usr/local/bin/gosu; \
-	rm -rf "$GNUPGHOME" /usr/local/bin/gosu.asc /usr/local/bin/jq.asc; \
-    rm -rf /anchore-engine/* /root/.cache /config/config.yaml 
+    rm -rf "$GNUPGHOME" /usr/local/bin/gosu.asc /usr/local/bin/jq.asc; \
+    rm -rf /anchore-engine/* /root/.cache /config/config.yaml
 
 ENV PG_MAJOR="9.6"
 ENV PGDATA="/var/lib/postgresql/data"
 
 RUN set -eux; \
-    yum install -y --disablerepo pgdg94 https://download.postgresql.org/pub/repos/yum/9.6/redhat/rhel-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm; \
-    yum install -y --disablerepo pgdg94 postgresql96 postgresql96-server
+    yum install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm && \
+    yum install -y postgresql96 postgresql96-server
 
 RUN set -eux; \
     mkdir -p /var/lib/postgresql; \
@@ -42,7 +42,7 @@ RUN set -eux; \
     mkdir -p /var/run/postgresql; \
     chown -R anchore:anchore /var/run/postgresql; \
     chmod 2775 /var/run/postgresql; \
-    mkdir -p "$PGDATA"; \ 
+    mkdir -p "$PGDATA"; \
     chown -R anchore:anchore "$PGDATA"; \
     chmod 700 "$PGDATA"
 
@@ -86,7 +86,7 @@ ENV ANCHORE_ENDPOINT_HOSTNAME="localhost"
 RUN set -eux; \
     echo "127.0.0.1 $ANCHORE_ENDPOINT_HOSTNAME" >> /etc/hosts; \
     touch /var/log/anchore.log; \
-    chown anchore:anchore /var/log/anchore.log; \ 
+    chown anchore:anchore /var/log/anchore.log; \
     chown anchore:anchore /anchore-engine
 
 COPY conf/stateless_ci_config.yaml /config/config.yaml
