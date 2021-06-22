@@ -16,7 +16,7 @@ RUN set -ex; \
     curl -Lo /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/${GOSU_VERSION}/gosu-amd64"; \
     curl -Lo /usr/local/bin/gosu.asc "https://github.com/tianon/gosu/releases/download/${GOSU_VERSION}/gosu-amd64.asc"; \
     export GNUPGHOME="$(mktemp -d)"; \
-    gpg --batch --keyserver pgp.mit.edu --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4; \
+    gpg --batch --keyserver keyserver.ubuntu.com --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4; \
     gpg --batch --import /usr/local/bin/jq-public.asc; \
     gpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu; \
     gpg --batch --verify /usr/local/bin/jq.asc /usr/local/bin/jq; \
