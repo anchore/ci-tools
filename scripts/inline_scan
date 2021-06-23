@@ -24,7 +24,7 @@ VALIDATED_OPTIONS=""
 # Vuln scan option variable defaults
 DOCKERFILE="./Dockerfile"
 POLICY_BUNDLE="./policy_bundle.json"
-TIMEOUT=300
+TIMEOUT=600
 VOLUME_PATH="/tmp/"
 # Analyzer option variable defaults
 ANCHORE_URL="http://localhost:8228"
