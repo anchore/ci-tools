@@ -35,8 +35,8 @@ EOF
 ##############################################
 
 # Specify what versions to build & what version should get 'latest' tag
-export BUILD_VERSIONS=('v0.9.4' 'v0.9.3')
-export LATEST_VERSION='v0.9.4'
+export BUILD_VERSIONS=('v0.10.0' 'v0.9.4' 'v0.9.3')
+export LATEST_VERSION='v0.10.0'
 
 # PROJECT_VARS are custom vars that are modified between projects
 # Expand all required ENV vars or set to default values with := variable substitution
