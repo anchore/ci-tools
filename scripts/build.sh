@@ -336,7 +336,7 @@ test_inline_script() {
     pushd "${WORKING_DIRECTORY}/.circleci/node_critical_pass/"
     docker build -t example.com:5000/ci-test_1/node_critical-pass:latest .
     popd
-    ${exec_cmd} -s "${INLINE_URL}" | bash -s -- -t 500 -d ".circleci/node_critical_pass/Dockerfile" -b ".circleci/.anchore/policy_bundle.json" example.com:5000/ci-test_1/node_critical-pass
+    ${exec_cmd} -s "${INLINE_URL}" | bash -s -- -t 900 -d ".circleci/node_critical_pass/Dockerfile" -b ".circleci/.anchore/policy_bundle.json" example.com:5000/ci-test_1/node_critical-pass
 }
 
 
