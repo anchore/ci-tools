@@ -326,10 +326,10 @@ test_inline_script() {
     else
         local exec_cmd=cat
     fi
-    ${exec_cmd} -s "${INLINE_URL}" | bash -s -- -p  centos:latest
+    ${exec_cmd} -s "${INLINE_URL}" | bash -s -- -p -t 900  centos:latest
     # test script with dockerfile
     docker pull docker:stable-git
-    ${exec_cmd} -s "${INLINE_URL}" | bash -s -- -d ".circleci/Dockerfile" docker:stable-git
+    ${exec_cmd} -s "${INLINE_URL}" | bash -s -- -t 900 -d ".circleci/Dockerfile" docker:stable-git
     # test script with policy bundle
     ${exec_cmd} -s "${INLINE_URL}" | bash -s -- -p  -t 1500 -b ".circleci/.anchore/policy_bundle.json" "anchore/anchore-engine:latest"
     # test script with policy bundle & dockerfile
