@@ -97,6 +97,7 @@ COPY scripts/anchore_ci_tools.py  \
 
 USER anchore:anchore
 WORKDIR /anchore-engine
+ENV PATH ${PATH}:/anchore-cli/bin
 
 EXPOSE 5432 5000
 ENTRYPOINT ["docker-entrypoint.sh"]
