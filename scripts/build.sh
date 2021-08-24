@@ -35,8 +35,8 @@ EOF
 ##############################################
 
 # Specify what versions to build & what version should get 'latest' tag
-export BUILD_VERSIONS=('v0.10.0' 'v0.9.4' 'v0.9.3')
-export LATEST_VERSION='v0.10.0'
+export BUILD_VERSIONS=('v0.10.1' 'v0.10.0' 'v0.9.4')
+export LATEST_VERSION='v0.10.1'
 
 # PROJECT_VARS are custom vars that are modified between projects
 # Expand all required ENV vars or set to default values with := variable substitution
@@ -71,7 +71,7 @@ main() {
             s  ) s_flag=true;;
             h  ) display_usage; exit;;
             \? ) printf "\n\t%s\n\n" "Invalid option: -${OPTARG}" >&2; display_usage >&2; exit 1;;
-            :  ) printf "\n\t%s\n\n%s\n\n" "Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
+            :  ) printf "\n\t%s\n\n" "Option -${OPTARG} requires an argument." >&2; display_usage >&2; exit 1;;
         esac
     done
     shift "$((OPTIND - 1))"
@@ -157,7 +157,7 @@ cleanup() {
         fi
         popd &> /dev/null
         if [[ "${WORKING_DIRECTORY}" =~ 'tempci' ]]; then
-            rm -rf "$(dirname ${WORKING_DIRECTORY})"
+            rm -rf $(dirname "${WORKING_DIRECTORY}")
         fi
     else
         echo "Workspace Dir: ${WORKSPACE}"
@@ -177,7 +177,7 @@ build_and_save_images() {
     setup_build_environment
     # build images for every specified version
     if [[ "${build_version}" == 'all' ]]; then
-        for version in ${BUILD_VERSIONS[@]}; do
+        for version in "${BUILD_VERSIONS[@]}"; do
             echo "Building ${IMAGE_REPO}:dev-${version}"
             git reset --hard
             # exit script if tag does not exist
@@ -216,7 +216,7 @@ test_built_images() {
     echo "build_version=${build_version}"
     setup_build_environment
     if [[ "${build_version}" == 'all' ]]; then
-        for version in ${BUILD_VERSIONS[@]}; do
+        for version in "${BUILD_VERSIONS[@]}"; do
             unset ANCHORE_CI_IMAGE
             load_image "${version}"
             export ANCHORE_CI_IMAGE="${IMAGE_REPO}:dev-${version}"
@@ -252,7 +252,7 @@ load_image_and_push_dockerhub() {
     echo "build_version=${build_version}"
     setup_build_environment
     if [[ "${build_version}" == 'all' ]]; then
-        for version in ${BUILD_VERSIONS[@]}; do
+        for version in "${BUILD_VERSIONS[@]}"; do
             load_image "${version}"
             push_dockerhub "${version}"
         done
@@ -297,9 +297,11 @@ build_image() {
     else
         docker build --build-arg "ANCHORE_VERSION=${anchore_version}" -t "${IMAGE_REPO}:dev" .
     fi
-    local docker_name="${RANDOM:-temp}-db-preload"
+    local docker_name
+    docker_name="${RANDOM:-temp}-db-preload"
     docker run -it --name "${docker_name}" "${IMAGE_REPO}:dev" debug /bin/bash -c "anchore-cli system wait --feedsready 'vulnerabilities' && anchore-cli system status && anchore-cli system feeds list"
-    local docker_id=$(docker inspect ${docker_name} | jq '.[].Id')
+    local docker_id
+    docker_id=$(docker inspect ${docker_name} | jq '.[].Id')
     docker kill "${docker_id}" && docker rm "${docker_id}"
     DOCKER_RUN_IDS+=("${docker_id:0:6}")
     rm -f "${WORKING_DIRECTORY}/anchore-bootstrap.sql.gz"
@@ -348,13 +350,14 @@ ci_test_job() {
     local ci_image=$1
     local ci_function=$2
     local docker_name="${RANDOM:-TEMP}-ci-test"
-    docker run --net host -it --name "${docker_name}" -v $(dirname "${WORKING_DIRECTORY}"):$(dirname "${WORKING_DIRECTORY}"):delegated -v /var/run/docker.sock:/var/run/docker.sock "${ci_image}" /bin/sh -c "\
+    docker run --net host -it --name "${docker_name}" -v "$(dirname "${WORKING_DIRECTORY}"):$(dirname "${WORKING_DIRECTORY}"):delegated" -v /var/run/docker.sock:/var/run/docker.sock "${ci_image}" /bin/sh -c "\
         cd $(dirname "${WORKING_DIRECTORY}") && \
         cp ${WORKING_DIRECTORY}/scripts/build.sh $(dirname "${WORKING_DIRECTORY}")/build.sh && \
         export WORKING_DIRECTORY=${WORKING_DIRECTORY} && \
         sudo -E bash $(dirname "${WORKING_DIRECTORY}")/build.sh ${ci_function} \
     "
-    local docker_id=$(docker inspect ${docker_name} | jq '.[].Id')
+    local docker_id
+    docker_id=$(docker inspect ${docker_name} | jq '.[].Id')
     docker kill "${docker_id}" && docker rm "${docker_id}"
     DOCKER_RUN_IDS+=("${docker_id:0:6}")
 }
@@ -400,10 +403,10 @@ setup_and_print_env_vars() {
     # Export & print all project env vars to the screen
     echo "${color_yellow}"
     printf "%s\n\n" "- ENVIRONMENT VARIABLES SET -"
-    echo "BUILD_VERSIONS=${BUILD_VERSIONS[@]}"
+    echo "BUILD_VERSIONS=${BUILD_VERSIONS[*]}"
     printf "%s\n" "LATEST_VERSION=${LATEST_VERSION}"
-    for var in ${PROJECT_VARS[@]}; do
-        export "${var}"
+    for var in "${PROJECT_VARS[@]}"; do
+        export "${var?}"
         printf "%s" "${color_yellow}"
         printf "%s\n" "${var}"
     done
