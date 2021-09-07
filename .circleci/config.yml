@@ -118,8 +118,8 @@ workflows:
           anchore_version: v0.10.1
           context: dockerhub
       - build_test_push_inline_slim:
-          name: build_test_push_inline_slim_v0101
-          anchore_version: v0.10.1
+          name: build_test_push_inline_slim_v0102
+          anchore_version: v0.10.2
           context: dockerhub
       - build_test_push_inline_image:
           name: build_test_push_inline_image_v094
@@ -134,6 +134,6 @@ workflows:
           anchore_version: v0.10.1
           context: dockerhub
       - build_test_push_inline_image:
-          name: build_test_push_inline_image_v0101
-          anchore_version: v0.10.1
+          name: build_test_push_inline_image_v0102
+          anchore_version: v0.10.2
           context: dockerhub
