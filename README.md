@@ -1,3 +1,10 @@
+_**Warning**: The Anchore Inline Scan script is deprecated and will reach **EOL on Jan 10, 2022**. Please update your integrations to use [Grype](https://github.com/anchore/grype) for CI-based vulnerability scanning or [Syft](https://github.com/anchore/syft). We will be updating our integrations that use inline_scan during that time to use Grype directly. Until that time all integrations will continue to function and get updated vulnerability data._
+
+_**Until Jan 10, 2022**: we will continue building inline_scan images based on v0.10.x of Anchore Engine and they will be updated daily for latest feed data.
+On Jan 10, 2022, we will stop building new versions of the images with updated vulnerability data and the data will be stale._
+
+_**After Jan 10, 2022**: users should be transitioned to [Grype](https://github.com/anchore/grype) or Grype-based integrations._ 
+
 # Anchore CI tools [![CircleCI](https://circleci.com/gh/anchore/ci-tools.svg?style=svg)](https://circleci.com/gh/anchore/ci-tools)
 
 An assortment of scripts & tools for integrating Anchore Engine into your CI/CD pipeline.
