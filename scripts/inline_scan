@@ -35,6 +35,23 @@ IMAGE_DIGEST_SHA="sha256:123456890abcdefg"
 ANCHORE_IMAGE_ID="123456890abcdefg"
 MANIFEST_FILE="./manifest.json"
 
+deprecation_notice() {
+cat << EOF
+
+**WARNING**
+
+The Anchore Inline Scan script is deprecated and will reach EOL on Jan 10, 2022.
+The vulnerability database will no longer be kept up to date and new images will no longer be published.
+
+Please update your integrations to use our new CLI vulnerability scanning tool, grype.
+
+https://github.com/anchore/grype
+
+**WARNING**
+
+EOF
+sleep 10
+}
 
 display_usage() {
 cat << EOF
@@ -107,15 +124,18 @@ main() {
     trap 'interupt' SIGINT
 
     if [[ "$#" -lt 1 ]]; then
+        deprecation_notice >&2
         display_usage >&2
         printf '\n\t%s\n\n' "ERROR - must specify operation ('scan' or 'analyze')" >&2
         exit 1
     fi
     if [[ "$1" == 'help' ]]; then
+        deprecation_notice >&2
         display_usage >&2
 	exit 1
     elif [[ "$1" == 'analyze' ]]; then
         shift "$((OPTIND))"
+        deprecation_notice >&2
         ANALYZE=true
         get_and_validate_analyzer_options "$@"
         get_and_validate_images "${VALIDATED_OPTIONS}"
@@ -123,10 +143,12 @@ main() {
         CREATE_CMD+=('analyze')
         RUN_CMD+=('analyze')
         start_analysis
+        deprecation_notice >&2
     else
         if [[ "$1" == 'scan' ]]; then
             shift "$((OPTIND))"
         fi
+        deprecation_notice >&2
         VULN_SCAN=true
         get_and_validate_scanner_options "$@"
         get_and_validate_images "${VALIDATED_OPTIONS}"
@@ -134,6 +156,7 @@ main() {
         CREATE_CMD+=('scan')
         RUN_CMD+=('scan')
         start_vuln_scan
+        deprecation_notice >&2
     fi
 }
 
